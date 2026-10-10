@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: homeutils
+          POSTGRES_USER: homeutils
+          POSTGRES_PASSWORD: homeutils
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U homeutils"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DJANGO_SECRET_KEY: ci-only
+      POSTGRES_HOST: localhost
+      POSTGRES_DB: homeutils
+      POSTGRES_USER: homeutils
+      POSTGRES_PASSWORD: homeutils
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run ty check
+      - run: uv run pytest
