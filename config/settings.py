@@ -24,6 +24,18 @@ ALLOWED_HOSTS = [
     h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h.strip()
 ]
 
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()
+]
+
+# A TLS-terminating reverse proxy (e.g. in front of Authelia) talks to
+# gunicorn over plain HTTP, so without this Django thinks every request is
+# http:// - which makes its CSRF Origin check reject the browser's real
+# https:// Origin header as cross-origin. Only correct when the app is
+# unreachable except through that proxy, same trust boundary as
+# AUTH_MODE=remote_user.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 # AUTH_MODE selects how a request's identity is established:
 #   "local"       - standard Django username/password login (default, for dev).
 #   "remote_user" - trust an identity header (e.g. Remote-User) set by an
