@@ -40,5 +40,25 @@
                 <polyline points="4 12 9 17 20 6" />
             </svg>
         </button>
+
+        <form class="backfill-form"
+              method="post"
+              action="{% url 'meds:toggle' medication.id %}"
+              hx-post="{% url 'meds:toggle' medication.id %}"
+              hx-target="closest .med-card"
+              hx-swap="outerHTML">
+            {% csrf_token %}
+            <input type="date"
+                   name="date"
+                   min="{{ medication.created_at|date:'Y-m-d' }}"
+                   max="{{ today|date:'Y-m-d' }}"
+                   required
+                   aria-label="Log a different day for {{ medication.name }}">
+            <button class="btn-ghost" type="submit" aria-label="Toggle the selected day for {{ medication.name }}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <polyline points="4 12 9 17 20 6" />
+                </svg>
+            </button>
+        </form>
     </div>
 </div>

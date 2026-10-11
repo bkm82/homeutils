@@ -66,6 +66,51 @@ class SelectorTests(TestCase):
         self.assertEqual(statuses[self.today], "today-pending")
 
 
+class ToggleDoseViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("alice", password="pw")
+        self.client.force_login(self.user)
+        self.medication = Medication.objects.create(owner=self.user, name="Vitamin D")
+
+    def test_toggle_without_date_logs_today(self):
+        self.client.post(reverse("meds:toggle", args=[self.medication.pk]))
+        log = DoseLog.objects.get(medication=self.medication)
+        self.assertEqual(log.date, timezone.localdate())
+        self.assertTrue(log.taken)
+
+    def test_toggling_same_day_twice_flips_it_back_off(self):
+        url = reverse("meds:toggle", args=[self.medication.pk])
+        self.client.post(url)
+        self.client.post(url)
+        log = DoseLog.objects.get(medication=self.medication)
+        self.assertFalse(log.taken)
+
+    def test_can_backfill_a_past_date(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        self.client.post(
+            reverse("meds:toggle", args=[self.medication.pk]),
+            {"date": yesterday.isoformat()},
+        )
+        log = DoseLog.objects.get(medication=self.medication, date=yesterday)
+        self.assertTrue(log.taken)
+
+    def test_rejects_a_future_date(self):
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        response = self.client.post(
+            reverse("meds:toggle", args=[self.medication.pk]),
+            {"date": tomorrow.isoformat()},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(DoseLog.objects.filter(medication=self.medication).exists())
+
+    def test_rejects_a_malformed_date(self):
+        response = self.client.post(
+            reverse("meds:toggle", args=[self.medication.pk]),
+            {"date": "not-a-date"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+
 class CrossUserIsolationTests(TestCase):
     """Users must never be able to view or mutate another user's medications."""
 

@@ -379,6 +379,42 @@ h1, h2, h3 {
   justify-content: space-between;
 }
 
+.backfill-form {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.backfill-form input[type="date"] {
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--bg-light);
+  background: var(--bg-dark);
+  color: var(--fg-light);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color-scheme: dark;
+}
+
+.backfill-form input[type="date"]:focus {
+  outline: 2px solid var(--accent);
+}
+
+.backfill-form button {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--bg-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.backfill-form svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* New medication form */
 
 .med-form {

@@ -11,7 +11,7 @@
 {% if cards %}
 <div class="med-grid">
     {% for card in cards %}
-        {% include "meds/partials/medication_card.html" with medication=card.medication streak=card.streak completion=card.completion heatmap=card.heatmap taken_today=card.taken_today %}
+        {% include "meds/partials/medication_card.html" with medication=card.medication streak=card.streak completion=card.completion heatmap=card.heatmap taken_today=card.taken_today today=card.today %}
     {% endfor %}
 </div>
 {% else %}

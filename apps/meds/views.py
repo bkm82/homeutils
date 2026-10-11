@@ -1,5 +1,7 @@
+from datetime import datetime
+
 from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -13,6 +15,7 @@ def _card_context(medication: Medication) -> dict:
     today = timezone.localdate()
     return {
         "medication": medication,
+        "today": today,
         "streak": selectors.current_streak(medication, today),
         "completion": selectors.completion_rate(medication, today=today),
         "heatmap": selectors.heatmap(medication, today=today),
@@ -52,10 +55,22 @@ def archive_medication(request: HttpRequest, pk: int) -> HttpResponse:
 
 @login_required
 @require_POST
-def toggle_today(request: HttpRequest, pk: int) -> HttpResponse:
+def toggle_dose(request: HttpRequest, pk: int) -> HttpResponse:
     medication = get_object_or_404(Medication, pk=pk, owner=request.user)
     today = timezone.localdate()
-    log, created = DoseLog.objects.get_or_create(medication=medication, date=today)
+
+    date_str = request.POST.get("date")
+    if date_str:
+        try:
+            day = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return HttpResponseBadRequest("Invalid date")
+        if day > today:
+            return HttpResponseBadRequest("Cannot log a future date")
+    else:
+        day = today
+
+    log, created = DoseLog.objects.get_or_create(medication=medication, date=day)
     if not created:
         log.taken = not log.taken
         log.save(update_fields=["taken"])
