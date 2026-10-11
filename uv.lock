@@ -66,6 +66,7 @@ dependencies = [
     { name = "gunicorn" },
     { name = "psycopg", extra = ["binary"] },
     { name = "python-dotenv" },
+    { name = "tzdata" },
     { name = "whitenoise" },
 ]
 
@@ -84,6 +85,7 @@ requires-dist = [
     { name = "gunicorn", specifier = ">=26.2.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
+    { name = "tzdata", specifier = ">=2026.5" },
     { name = "whitenoise", specifier = ">=6.12.0" },
 ]
 
