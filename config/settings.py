@@ -144,12 +144,18 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
 # gunicorn (unlike `manage.py runserver`) never serves STATIC_ROOT itself, so
-# WhiteNoise's middleware does it instead - no separate nginx/CDN needed.
+# WhiteNoise's middleware does it instead - no separate nginx/CDN needed. The
+# manifest storage needs `collectstatic` to have already run, which dev's
+# runserver loop doesn't do - so only use it when DEBUG is off.
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": (
+            "django.contrib.staticfiles.storage.StaticFilesStorage"
+            if DEBUG
+            else "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        ),
     },
 }
