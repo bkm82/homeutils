@@ -49,9 +49,8 @@ Setup, per user:
 2. On the app's Notifications page, set that same topic, a reminder time, and save. Use "Send
    test" to confirm delivery before relying on the schedule.
 
-Set `DJANGO_TIME_ZONE` (e.g. `America/New_York`) in production - it determines both the
-reminder-time comparison and the app's day boundary for streaks/heatmaps. Left at the default
-`UTC`, reminders fire at UTC time, not your local time.
+`DJANGO_TIME_ZONE` determines both the reminder-time comparison and the app's day boundary for
+streaks/heatmaps - defaults to `America/Phoenix`; override it in `.env` if deploying elsewhere.
 
 ## Adding a new utility app
 

@@ -146,7 +146,7 @@ AUTH_PASSWORD_VALIDATORS = [
 LANGUAGE_CODE = "en-us"
 # Drives every "today" boundary in the app - streak/heatmap day rollover and
 # notification reminder_time comparisons all use this, not UTC.
-TIME_ZONE = os.environ.get("DJANGO_TIME_ZONE", "UTC")
+TIME_ZONE = os.environ.get("DJANGO_TIME_ZONE", "America/Phoenix")
 USE_I18N = True
 USE_TZ = True
 
