@@ -49,9 +49,28 @@ Then:
 
 ## Releasing
 
-Push a tag matching `v*.*.*` to trigger `.github/workflows/release.yml`, which builds the image
-and pushes `ghcr.io/<owner>/homeutils:<version>` and `:latest`. Make the GHCR package public so
-the homelab repo can pull it without credentials:
+Releases are automatic. Every push to `main` runs `.github/workflows/auto-tag.yml`, which:
+
+1. Runs CI (`ci.yml`, called as a reusable workflow) - no tag is created if it fails.
+2. Bumps and pushes a semver tag based on [Conventional Commits](https://www.conventionalcommits.org/)
+   in the new commits: `fix:` -> patch, `feat:` -> minor, `feat!:`/`BREAKING CHANGE:` -> major,
+   anything else -> patch.
+
+That tag push triggers `.github/workflows/release.yml`, which re-runs CI (defense in depth, in
+case a tag is ever pushed by hand) and then builds and pushes
+`ghcr.io/<owner>/homeutils:<version>` and `:latest`. Make the GHCR package public so the homelab
+repo can pull it without credentials.
+
+**One-time setup**: `auto-tag.yml` pushes the tag using a `RELEASE_TOKEN` secret rather than the
+default `GITHUB_TOKEN`, because GitHub deliberately prevents the default token's pushes from
+triggering other workflows - a tag pushed with it would never fire `release.yml`. Create a
+fine-grained PAT scoped to this repo with "Contents: Read and write" permission, then add it:
+
+```sh
+gh secret set RELEASE_TOKEN
+```
+
+To tag manually instead (e.g. a hotfix release outside normal `main` flow):
 
 ```sh
 git tag v0.1.0

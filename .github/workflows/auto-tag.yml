@@ -18,10 +18,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # The default GITHUB_TOKEN is deliberately prevented by GitHub from
+          # triggering other workflows, so a tag pushed with it would never
+          # fire release.yml's `on: push: tags:` trigger. RELEASE_TOKEN is a
+          # PAT with contents:write on this repo - see README for setup.
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Bump version and push tag
         uses: mathieudutour/github-tag-action@v7
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.RELEASE_TOKEN }}
           default_bump: patch
           release_branches: main
