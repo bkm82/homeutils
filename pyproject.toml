@@ -1,6 +1,6 @@
 [project]
 name = "homeutils"
-version = "0.1.0"
+version = "0.2.0"
 description = "Personal homelab utility apps (networth tracker, medicine reminder, etc.) built on Django + htmx."
 requires-python = ">=3.13"
 dependencies = [
@@ -22,6 +22,7 @@ dev = [
 [tool.ruff]
 line-length = 99
 target-version = "py313"
+extend-exclude = ["**/migrations/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "DJ"]
@@ -35,3 +36,11 @@ python = ".venv"
 
 [tool.ty.src]
 exclude = ["**/migrations/**"]
+
+[tool.ty.rules]
+# ty has no django-stubs equivalent, so it can't see that Model field
+# descriptors resolve to plain values, that `objects`/reverse FK managers
+# exist, or that request.user/.htmx are added by middleware. Without this,
+# every ordinary Django model/request access is a false positive.
+unresolved-attribute = "ignore"
+invalid-return-type = "ignore"

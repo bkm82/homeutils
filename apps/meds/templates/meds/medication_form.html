@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Add medication · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>New medication</h1>
+</div>
+<form class="med-form" method="post">
+    {% csrf_token %}
+    {{ form.name }}
+    {{ form.note }}
+    <button class="btn btn-primary" type="submit">Save</button>
+</form>
+{% endblock %}

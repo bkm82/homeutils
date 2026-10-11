@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Sign in · homeutils{% endblock %}
+
+{% block content %}
+<div class="auth-shell">
+    <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true" style="margin: 0 auto; display: block;">
+        <circle cx="24" cy="24" r="9" fill="var(--accent)" />
+        <ellipse cx="24" cy="24" rx="21" ry="8" fill="none" stroke="var(--blue-bright)" stroke-width="2.5" transform="rotate(-25 24 24)" />
+        <circle cx="42.5" cy="16.5" r="3.5" fill="var(--cyan)" />
+    </svg>
+    <h2>homeutils</h2>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.username }}
+        {{ form.password }}
+        <button class="btn btn-primary" type="submit">Sign in</button>
+    </form>
+    {% if form.errors %}
+    <p style="color: var(--red-bright); font-size: 0.85rem;">Invalid credentials.</p>
+    {% endif %}
+</div>
+{% endblock %}

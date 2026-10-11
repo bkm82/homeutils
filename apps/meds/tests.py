@@ -1,0 +1,100 @@
+from datetime import date, datetime, time, timedelta
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
+
+from . import selectors
+from .models import DoseLog, Medication
+
+User = get_user_model()
+
+
+def _log(medication, day, taken=True):
+    DoseLog.objects.create(medication=medication, date=day, taken=taken)
+
+
+def _set_created(medication, day):
+    Medication.objects.filter(pk=medication.pk).update(
+        created_at=timezone.make_aware(datetime.combine(day, time.min))
+    )
+    medication.refresh_from_db()
+
+
+class SelectorTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("alice", password="pw")
+        self.today = date(2026, 1, 15)
+        self.medication = Medication.objects.create(owner=self.user, name="Vitamin D")
+        _set_created(self.medication, self.today - timedelta(days=30))
+
+    def test_streak_counts_consecutive_days_including_pending_today(self):
+        for n in range(1, 4):
+            _log(self.medication, self.today - timedelta(days=n))
+        self.assertEqual(selectors.current_streak(self.medication, self.today), 3)
+
+    def test_streak_includes_today_once_logged(self):
+        for n in range(0, 4):
+            _log(self.medication, self.today - timedelta(days=n))
+        self.assertEqual(selectors.current_streak(self.medication, self.today), 4)
+
+    def test_streak_breaks_on_gap(self):
+        _log(self.medication, self.today - timedelta(days=1))
+        _log(self.medication, self.today - timedelta(days=3))
+        self.assertEqual(selectors.current_streak(self.medication, self.today), 1)
+
+    def test_streak_zero_when_nothing_logged(self):
+        self.assertEqual(selectors.current_streak(self.medication, self.today), 0)
+
+    def test_completion_rate_over_window(self):
+        for n in range(0, 30, 2):
+            _log(self.medication, self.today - timedelta(days=n))
+        self.assertEqual(selectors.completion_rate(self.medication, 30, self.today), 50)
+
+    def test_completion_rate_clips_to_medication_start(self):
+        _set_created(self.medication, self.today - timedelta(days=5))
+        for n in range(0, 6):
+            _log(self.medication, self.today - timedelta(days=n))
+        self.assertEqual(selectors.completion_rate(self.medication, 30, self.today), 100)
+
+    def test_heatmap_marks_before_start_days(self):
+        _set_created(self.medication, self.today - timedelta(days=2))
+        cells = selectors.heatmap(self.medication, weeks=1, today=self.today)
+        statuses = {cell.date: cell.status for cell in cells}
+        self.assertEqual(statuses[self.today - timedelta(days=6)], "before-start")
+        self.assertEqual(statuses[self.today], "today-pending")
+
+
+class CrossUserIsolationTests(TestCase):
+    """Users must never be able to view or mutate another user's medications."""
+
+    def setUp(self):
+        self.alice = User.objects.create_user("alice", password="pw")
+        self.bob = User.objects.create_user("bob", password="pw")
+        self.alice_med = Medication.objects.create(owner=self.alice, name="Alice Pill")
+        self.bob_med = Medication.objects.create(owner=self.bob, name="Bob Pill")
+
+    def test_dashboard_only_shows_own_medications(self):
+        self.client.force_login(self.bob)
+        response = self.client.get(reverse("meds:dashboard"))
+        self.assertNotContains(response, "Alice Pill")
+        self.assertContains(response, "Bob Pill")
+
+    def test_cannot_toggle_another_users_medication(self):
+        self.client.force_login(self.bob)
+        response = self.client.post(reverse("meds:toggle", args=[self.alice_med.pk]))
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(DoseLog.objects.filter(medication=self.alice_med).exists())
+
+    def test_cannot_archive_another_users_medication(self):
+        self.client.force_login(self.bob)
+        response = self.client.post(reverse("meds:archive", args=[self.alice_med.pk]))
+        self.assertEqual(response.status_code, 404)
+        self.alice_med.refresh_from_db()
+        self.assertTrue(self.alice_med.is_active)
+
+    def test_anonymous_user_is_redirected_to_login(self):
+        response = self.client.get(reverse("meds:dashboard"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("accounts:login"), response.url)

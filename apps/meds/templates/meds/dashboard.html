@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Meds · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Meds</h1>
+    <a class="btn btn-primary" href="{% url 'meds:add' %}">+ Add</a>
+</div>
+
+{% if cards %}
+<div class="med-grid">
+    {% for card in cards %}
+        {% include "meds/partials/medication_card.html" with medication=card.medication streak=card.streak completion=card.completion heatmap=card.heatmap taken_today=card.taken_today %}
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <circle cx="12" cy="12" r="4" />
+        <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-25 12 12)" />
+    </svg>
+    <div><a class="btn btn-primary" href="{% url 'meds:add' %}">+ Add a medication</a></div>
+</div>
+{% endif %}
+{% endblock %}

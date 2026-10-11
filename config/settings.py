@@ -24,6 +24,16 @@ ALLOWED_HOSTS = [
     h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h.strip()
 ]
 
+# AUTH_MODE selects how a request's identity is established:
+#   "local"       - standard Django username/password login (default, for dev).
+#   "remote_user" - trust an identity header (e.g. Remote-User) set by an
+#                   upstream reverse proxy running Authelia forward-auth.
+#                   Only ever enable this when the app is unreachable except
+#                   through that proxy - anything that can set the header can
+#                   log in as anyone.
+AUTH_MODE = os.environ.get("AUTH_MODE", "local")
+REMOTE_USER_HEADER = os.environ.get("REMOTE_USER_HEADER", "HTTP_REMOTE_USER")
+
 
 # Application definition
 
@@ -36,6 +46,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django_htmx",
     "apps.core",
+    "apps.accounts",
+    "apps.meds",
 ]
 
 MIDDLEWARE = [
@@ -44,10 +56,27 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+]
+
+if AUTH_MODE == "remote_user":
+    MIDDLEWARE.append("apps.accounts.middleware.AutheliaRemoteUserMiddleware")
+
+MIDDLEWARE += [
     "django.contrib.messages.middleware.MessageMiddleware",
+    "django.contrib.auth.middleware.LoginRequiredMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
 ]
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+]
+if AUTH_MODE == "remote_user":
+    AUTHENTICATION_BACKENDS.insert(0, "apps.accounts.backends.AutheliaUserBackend")
+
+LOGIN_URL = "accounts:login"
+LOGIN_REDIRECT_URL = "meds:dashboard"
+LOGOUT_REDIRECT_URL = "accounts:login"
 
 ROOT_URLCONF = "config.urls"
 

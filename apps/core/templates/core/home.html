@@ -3,5 +3,13 @@
 {% block title %}homeutils{% endblock %}
 
 {% block content %}
-<p>homeutils is up. Add new utility apps under <code>apps/</code>.</p>
+<div class="tile-grid">
+    <a class="tile" href="{% url 'meds:dashboard' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-25 12 12)" />
+        </svg>
+        <span>Meds</span>
+    </a>
+</div>
 {% endblock %}

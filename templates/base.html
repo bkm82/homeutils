@@ -4,14 +4,52 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}homeutils{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Ccircle cx='24' cy='24' r='9' fill='%23de9a63'/%3E%3Cellipse cx='24' cy='24' rx='21' ry='8' fill='none' stroke='%234d7ab8' stroke-width='2.5' transform='rotate(-25 24 24)'/%3E%3Ccircle cx='42.5' cy='16.5' r='3.5' fill='%237fb0b8'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/space.css' %}">
     <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+    <meta name="csrf-token" content="{{ csrf_token }}">
 </head>
 <body>
-    <header>
-        <h1><a href="{% url 'core:home' %}">homeutils</a></h1>
-    </header>
-    <main>
+    <nav class="navbar">
+        <a class="brand" href="{% url 'core:home' %}">
+            <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+                <circle cx="24" cy="24" r="9" fill="var(--accent)" />
+                <ellipse cx="24" cy="24" rx="21" ry="8" fill="none" stroke="var(--blue-bright)" stroke-width="2.5" transform="rotate(-25 24 24)" />
+                <circle cx="42.5" cy="16.5" r="3.5" fill="var(--cyan)" />
+            </svg>
+            <span>homeutils</span>
+        </a>
+        {% if user.is_authenticated %}
+        <div class="nav-links">
+            <a class="nav-link{% if request.resolver_match.app_name == 'meds' %} active{% endif %}" href="{% url 'meds:dashboard' %}">Meds</a>
+        </div>
+        <div class="nav-user">
+            <span>{{ user.get_username }}</span>
+            <form method="post" action="{% url 'accounts:logout' %}">
+                {% csrf_token %}
+                <button class="btn-ghost" type="submit">Logout</button>
+            </form>
+        </div>
+        {% endif %}
+    </nav>
+    <main class="page">
+        {% if messages %}
+        <ul class="messages">
+            {% for message in messages %}
+            <li class="message message-{{ message.tags }}">{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
         {% block content %}{% endblock %}
     </main>
+    <script>
+        document.body.addEventListener("htmx:configRequest", (event) => {
+            event.detail.headers["X-CSRFToken"] = document.querySelector('meta[name="csrf-token"]').content;
+        });
+    </script>
 </body>
 </html>
