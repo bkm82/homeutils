@@ -50,7 +50,6 @@
             {% csrf_token %}
             <input type="date"
                    name="date"
-                   min="{{ medication.created_at|date:'Y-m-d' }}"
                    max="{{ today|date:'Y-m-d' }}"
                    required
                    aria-label="Log a different day for {{ medication.name }}">

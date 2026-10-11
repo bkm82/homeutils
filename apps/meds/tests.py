@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timedelta
+from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -15,19 +15,11 @@ def _log(medication, day, taken=True):
     DoseLog.objects.create(medication=medication, date=day, taken=taken)
 
 
-def _set_created(medication, day):
-    Medication.objects.filter(pk=medication.pk).update(
-        created_at=timezone.make_aware(datetime.combine(day, time.min))
-    )
-    medication.refresh_from_db()
-
-
 class SelectorTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user("alice", password="pw")
         self.today = date(2026, 1, 15)
         self.medication = Medication.objects.create(owner=self.user, name="Vitamin D")
-        _set_created(self.medication, self.today - timedelta(days=30))
 
     def test_streak_counts_consecutive_days_including_pending_today(self):
         for n in range(1, 4):
@@ -47,22 +39,25 @@ class SelectorTests(TestCase):
     def test_streak_zero_when_nothing_logged(self):
         self.assertEqual(selectors.current_streak(self.medication, self.today), 0)
 
+    def test_streak_is_not_limited_by_when_the_medication_record_was_added(self):
+        # The medication row itself was just created "today" in setUp, but a
+        # user should still be able to backfill a streak that started well
+        # before they got around to adding it to the app.
+        for n in range(0, 10):
+            _log(self.medication, self.today - timedelta(days=n))
+        self.assertEqual(selectors.current_streak(self.medication, self.today), 10)
+
     def test_completion_rate_over_window(self):
         for n in range(0, 30, 2):
             _log(self.medication, self.today - timedelta(days=n))
         self.assertEqual(selectors.completion_rate(self.medication, 30, self.today), 50)
 
-    def test_completion_rate_clips_to_medication_start(self):
-        _set_created(self.medication, self.today - timedelta(days=5))
-        for n in range(0, 6):
-            _log(self.medication, self.today - timedelta(days=n))
-        self.assertEqual(selectors.completion_rate(self.medication, 30, self.today), 100)
-
-    def test_heatmap_marks_before_start_days(self):
-        _set_created(self.medication, self.today - timedelta(days=2))
-        cells = selectors.heatmap(self.medication, weeks=1, today=self.today)
+    def test_heatmap_reflects_backfilled_days_regardless_of_record_age(self):
+        far_back_day = self.today - timedelta(days=60)
+        _log(self.medication, far_back_day)
+        cells = selectors.heatmap(self.medication, weeks=52, today=self.today)
         statuses = {cell.date: cell.status for cell in cells}
-        self.assertEqual(statuses[self.today - timedelta(days=6)], "before-start")
+        self.assertEqual(statuses[far_back_day], "taken")
         self.assertEqual(statuses[self.today], "today-pending")
 
 
