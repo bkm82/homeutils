@@ -26,6 +26,7 @@
         {% if user.is_authenticated %}
         <div class="nav-links">
             <a class="nav-link{% if request.resolver_match.app_name == 'meds' %} active{% endif %}" href="{% url 'meds:dashboard' %}">Meds</a>
+            <a class="nav-link{% if request.resolver_match.app_name == 'notifications' %} active{% endif %}" href="{% url 'notifications:settings' %}">Notifications</a>
         </div>
         <div class="nav-user">
             <span>{{ user.get_username }}</span>

@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.accounts",
     "apps.meds",
+    "apps.notifications",
 ]
 
 MIDDLEWARE = [
@@ -143,7 +144,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
+# Drives every "today" boundary in the app - streak/heatmap day rollover and
+# notification reminder_time comparisons all use this, not UTC.
+TIME_ZONE = os.environ.get("DJANGO_TIME_ZONE", "UTC")
 USE_I18N = True
 USE_TZ = True
 

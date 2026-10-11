@@ -26,5 +26,16 @@ services:
     ports:
       - "8000:8000"
 
+  scheduler:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "while true; do python manage.py send_reminders; sleep 900; done"
+
 volumes:
   db-data:

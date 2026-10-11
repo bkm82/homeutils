@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Notifications</h1>
+</div>
+<form class="med-form" method="post">
+    {% csrf_token %}
+    <label class="field-label" for="{{ form.topic.id_for_label }}">ntfy topic</label>
+    {{ form.topic }}
+    <label class="field-label" for="{{ form.server_url.id_for_label }}">Server</label>
+    {{ form.server_url }}
+    <label class="field-label" for="{{ form.reminder_time.id_for_label }}">Remind at</label>
+    {{ form.reminder_time }}
+    <label class="field-label-inline">{{ form.enabled }} Enabled</label>
+    <button class="btn btn-primary" type="submit">Save</button>
+</form>
+<form method="post" action="{% url 'notifications:test' %}" style="margin-top: 0.75rem;">
+    {% csrf_token %}
+    <button class="btn" type="submit">Send test</button>
+</form>
+{% endblock %}

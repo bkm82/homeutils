@@ -35,6 +35,24 @@ uv run pytest
 
 All four run in CI on every PR (`.github/workflows/ci.yml`).
 
+## Medication reminders (ntfy)
+
+A `scheduler` service in `docker-compose.yml` runs `manage.py send_reminders` every 15 minutes,
+checking every user's unlogged medications against their configured reminder time and pushing a
+notification via [ntfy](https://ntfy.sh) if anything is still pending. At most one push per user
+per day (`NotificationLog` dedupes it).
+
+Setup, per user:
+1. Install the [ntfy app](https://ntfy.sh/) on your phone and subscribe to a topic - treat the
+   topic name like a shared secret if using the public `ntfy.sh` server (anyone who knows it can
+   read your notifications), or self-host ntfy and point `server_url` at it instead.
+2. On the app's Notifications page, set that same topic, a reminder time, and save. Use "Send
+   test" to confirm delivery before relying on the schedule.
+
+Set `DJANGO_TIME_ZONE` (e.g. `America/New_York`) in production - it determines both the
+reminder-time comparison and the app's day boundary for streaks/heatmaps. Left at the default
+`UTC`, reminders fire at UTC time, not your local time.
+
 ## Adding a new utility app
 
 ```sh

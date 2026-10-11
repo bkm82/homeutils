@@ -5,5 +5,6 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/", include("apps.accounts.urls")),
     path("", include("apps.meds.urls")),
+    path("", include("apps.notifications.urls")),
     path("", include("apps.core.urls")),
 ]
