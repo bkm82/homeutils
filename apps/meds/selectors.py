@@ -11,7 +11,7 @@ HEATMAP_WEEKS = 12
 @dataclass(frozen=True)
 class HeatmapCell:
     date: date
-    status: str  # "taken" | "missed" | "today-pending"
+    status: str  # "taken" | "missed" | "today-pending" | "before-start"
 
 
 def _taken_dates(medication: Medication) -> set[date]:
@@ -23,13 +23,14 @@ def current_streak(medication: Medication, today: date | None = None) -> int:
     unlogged, since a pending day shouldn't break the streak yet)."""
     today = today or timezone.localdate()
     taken = _taken_dates(medication)
+    start = medication.start_date
 
     day = today
     if day not in taken:
         day -= timedelta(days=1)
 
     streak = 0
-    while day in taken:
+    while day >= start and day in taken:
         streak += 1
         day -= timedelta(days=1)
     return streak
@@ -38,11 +39,15 @@ def current_streak(medication: Medication, today: date | None = None) -> int:
 def completion_rate(
     medication: Medication, window_days: int = 30, today: date | None = None
 ) -> int:
-    """Percentage of days taken over the last `window_days`."""
+    """Percentage of days taken over the last `window_days`, clipped to the
+    medication's start date if it's younger than the window."""
     today = today or timezone.localdate()
-    start = today - timedelta(days=window_days - 1)
+    start = max(medication.start_date, today - timedelta(days=window_days - 1))
+    total_days = (today - start).days + 1
+    if total_days <= 0:
+        return 0
     taken_count = medication.logs.filter(taken=True, date__gte=start, date__lte=today).count()
-    return round(100 * taken_count / window_days)
+    return round(100 * taken_count / total_days)
 
 
 def heatmap(
@@ -52,6 +57,7 @@ def heatmap(
     so the grid always ends on today."""
     today = today or timezone.localdate()
     taken = _taken_dates(medication)
+    start_boundary = medication.start_date
 
     total_days = weeks * 7
     first_day = today - timedelta(days=total_days - 1)
@@ -59,7 +65,9 @@ def heatmap(
     cells = []
     for offset in range(total_days):
         day = first_day + timedelta(days=offset)
-        if day == today and day not in taken:
+        if day < start_boundary:
+            status = "before-start"
+        elif day == today and day not in taken:
             status = "today-pending"
         elif day in taken:
             status = "taken"

@@ -1,15 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}Add medication · homeutils{% endblock %}
+{% block title %}{% if medication %}Edit {{ medication.name }}{% else %}Add medication{% endif %} · homeutils{% endblock %}
 
 {% block content %}
 <div class="page-head">
-    <h1>New medication</h1>
+    <h1>{% if medication %}Edit{% else %}New medication{% endif %}</h1>
 </div>
 <form class="med-form" method="post">
     {% csrf_token %}
     {{ form.name }}
     {{ form.note }}
+    <label class="field-label" for="{{ form.start_date.id_for_label }}">Start date</label>
+    {{ form.start_date }}
     <button class="btn btn-primary" type="submit">Save</button>
 </form>
 {% endblock %}

@@ -246,6 +246,25 @@ h1, h2, h3 {
   gap: 0.75rem;
 }
 
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.card-actions .btn-ghost {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-actions svg {
+  width: 15px;
+  height: 15px;
+}
+
 .med-name {
   font-family: var(--font-display);
   font-size: 1.15rem;
@@ -436,6 +455,16 @@ h1, h2, h3 {
 
 .med-form input:focus, .med-form textarea:focus {
   outline: 2px solid var(--accent);
+}
+
+.med-form input[type="date"] {
+  color-scheme: dark;
+}
+
+.field-label {
+  margin-bottom: -0.4rem;
+  font-size: 0.8rem;
+  color: var(--fg-dim);
 }
 
 .page-head {

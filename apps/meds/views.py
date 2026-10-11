@@ -45,6 +45,19 @@ def add_medication(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
+def edit_medication(request: HttpRequest, pk: int) -> HttpResponse:
+    medication = get_object_or_404(Medication, pk=pk, owner=request.user)
+    if request.method == "POST":
+        form = MedicationForm(request.POST, instance=medication)
+        if form.is_valid():
+            form.save()
+            return redirect("meds:dashboard")
+    else:
+        form = MedicationForm(instance=medication)
+    return render(request, "meds/medication_form.html", {"form": form, "medication": medication})
+
+
+@login_required
 @require_POST
 def archive_medication(request: HttpRequest, pk: int) -> HttpResponse:
     medication = get_object_or_404(Medication, pk=pk, owner=request.user)

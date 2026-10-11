@@ -19,7 +19,9 @@ class SelectorTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user("alice", password="pw")
         self.today = date(2026, 1, 15)
-        self.medication = Medication.objects.create(owner=self.user, name="Vitamin D")
+        self.medication = Medication.objects.create(
+            owner=self.user, name="Vitamin D", start_date=self.today - timedelta(days=30)
+        )
 
     def test_streak_counts_consecutive_days_including_pending_today(self):
         for n in range(1, 4):
@@ -39,12 +41,21 @@ class SelectorTests(TestCase):
     def test_streak_zero_when_nothing_logged(self):
         self.assertEqual(selectors.current_streak(self.medication, self.today), 0)
 
-    def test_streak_is_not_limited_by_when_the_medication_record_was_added(self):
-        # The medication row itself was just created "today" in setUp, but a
-        # user should still be able to backfill a streak that started well
-        # before they got around to adding it to the app.
+    def test_streak_stops_at_start_date(self):
+        self.medication.start_date = self.today - timedelta(days=3)
+        self.medication.save()
         for n in range(0, 10):
             _log(self.medication, self.today - timedelta(days=n))
+        self.assertEqual(selectors.current_streak(self.medication, self.today), 4)
+
+    def test_moving_start_date_earlier_extends_the_streak(self):
+        # Editing start_date to reflect when you actually started taking the
+        # medication (not just when the row was added) should immediately
+        # extend the streak over already-backfilled days.
+        for n in range(0, 10):
+            _log(self.medication, self.today - timedelta(days=n))
+        self.medication.start_date = self.today - timedelta(days=9)
+        self.medication.save()
         self.assertEqual(selectors.current_streak(self.medication, self.today), 10)
 
     def test_completion_rate_over_window(self):
@@ -52,13 +63,42 @@ class SelectorTests(TestCase):
             _log(self.medication, self.today - timedelta(days=n))
         self.assertEqual(selectors.completion_rate(self.medication, 30, self.today), 50)
 
-    def test_heatmap_reflects_backfilled_days_regardless_of_record_age(self):
-        far_back_day = self.today - timedelta(days=60)
-        _log(self.medication, far_back_day)
-        cells = selectors.heatmap(self.medication, weeks=52, today=self.today)
+    def test_completion_rate_clips_to_start_date(self):
+        self.medication.start_date = self.today - timedelta(days=5)
+        self.medication.save()
+        for n in range(0, 6):
+            _log(self.medication, self.today - timedelta(days=n))
+        self.assertEqual(selectors.completion_rate(self.medication, 30, self.today), 100)
+
+    def test_heatmap_marks_before_start_days(self):
+        self.medication.start_date = self.today - timedelta(days=2)
+        self.medication.save()
+        cells = selectors.heatmap(self.medication, weeks=1, today=self.today)
         statuses = {cell.date: cell.status for cell in cells}
-        self.assertEqual(statuses[far_back_day], "taken")
+        self.assertEqual(statuses[self.today - timedelta(days=6)], "before-start")
         self.assertEqual(statuses[self.today], "today-pending")
+
+
+class EditMedicationViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("alice", password="pw")
+        self.client.force_login(self.user)
+        self.medication = Medication.objects.create(
+            owner=self.user, name="Vitamin D", start_date=date(2026, 1, 1)
+        )
+
+    def test_get_prefills_existing_start_date(self):
+        response = self.client.get(reverse("meds:edit", args=[self.medication.pk]))
+        self.assertContains(response, "2026-01-01")
+
+    def test_can_change_start_date(self):
+        response = self.client.post(
+            reverse("meds:edit", args=[self.medication.pk]),
+            {"name": "Vitamin D", "note": "", "start_date": "2025-06-01"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.medication.refresh_from_db()
+        self.assertEqual(self.medication.start_date, date(2025, 6, 1))
 
 
 class ToggleDoseViewTests(TestCase):
@@ -126,6 +166,11 @@ class CrossUserIsolationTests(TestCase):
         response = self.client.post(reverse("meds:toggle", args=[self.alice_med.pk]))
         self.assertEqual(response.status_code, 404)
         self.assertFalse(DoseLog.objects.filter(medication=self.alice_med).exists())
+
+    def test_cannot_edit_another_users_medication(self):
+        self.client.force_login(self.bob)
+        response = self.client.get(reverse("meds:edit", args=[self.alice_med.pk]))
+        self.assertEqual(response.status_code, 404)
 
     def test_cannot_archive_another_users_medication(self):
         self.client.force_login(self.bob)

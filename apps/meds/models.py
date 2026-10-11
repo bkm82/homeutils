@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Medication(models.Model):
@@ -9,6 +10,10 @@ class Medication(models.Model):
     name = models.CharField(max_length=120)
     note = models.CharField(max_length=200, blank=True)
     is_active = models.BooleanField(default=True)
+    # When tracking actually starts for streak/completion purposes - editable,
+    # since adding the medication to the app doesn't mean that's when you
+    # started taking it. created_at is just the DB row's own timestamp.
+    start_date = models.DateField(default=timezone.localdate)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

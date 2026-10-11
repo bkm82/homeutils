@@ -4,10 +4,18 @@
             <div class="med-name">{{ medication.name }}</div>
             {% if medication.note %}<div class="med-note">{{ medication.note }}</div>{% endif %}
         </div>
-        <form method="post" action="{% url 'meds:archive' medication.id %}">
-            {% csrf_token %}
-            <button class="btn-ghost" type="submit" aria-label="Archive {{ medication.name }}">&times;</button>
-        </form>
+        <div class="card-actions">
+            <a class="btn-ghost" href="{% url 'meds:edit' medication.id %}" aria-label="Edit {{ medication.name }}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+                </svg>
+            </a>
+            <form method="post" action="{% url 'meds:archive' medication.id %}">
+                {% csrf_token %}
+                <button class="btn-ghost" type="submit" aria-label="Archive {{ medication.name }}">&times;</button>
+            </form>
+        </div>
     </div>
 
     <div class="stat-row">
@@ -50,6 +58,7 @@
             {% csrf_token %}
             <input type="date"
                    name="date"
+                   min="{{ medication.start_date|date:'Y-m-d' }}"
                    max="{{ today|date:'Y-m-d' }}"
                    required
                    aria-label="Log a different day for {{ medication.name }}">
