@@ -6,6 +6,16 @@
 <div class="page-head">
     <h1>Notifications</h1>
 </div>
+
+{% if form.instance.topic %}
+<dl class="config-summary">
+    <div><dt>Topic</dt><dd>{{ form.instance.topic }}</dd></div>
+    <div><dt>Server</dt><dd>{{ form.instance.server_url }}</dd></div>
+    <div><dt>Remind at</dt><dd>{{ form.instance.reminder_time }}</dd></div>
+    <div><dt>Status</dt><dd>{% if form.instance.enabled %}Enabled{% else %}Disabled{% endif %}</dd></div>
+</dl>
+{% endif %}
+
 <form class="med-form" method="post">
     {% csrf_token %}
     <label class="field-label" for="{{ form.topic.id_for_label }}">ntfy topic</label>
@@ -17,8 +27,11 @@
     <label class="field-label-inline">{{ form.enabled }} Enabled</label>
     <button class="btn btn-primary" type="submit">Save</button>
 </form>
+
+{% if form.instance.topic %}
 <form method="post" action="{% url 'notifications:test' %}" style="margin-top: 0.75rem;">
     {% csrf_token %}
     <button class="btn" type="submit">Send test</button>
 </form>
+{% endif %}
 {% endblock %}

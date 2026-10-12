@@ -475,6 +475,30 @@ h1, h2, h3 {
   color: var(--fg-light);
 }
 
+.config-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  max-width: 420px;
+  margin: 0 0 1.5rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius);
+  background: linear-gradient(160deg, var(--bg-light), var(--bg-dark));
+  border: 1px solid var(--bg-light);
+}
+
+.config-summary dt {
+  font-size: 0.75rem;
+  color: var(--fg-dim);
+}
+
+.config-summary dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--fg-bright);
+}
+
 .page-head {
   display: flex;
   align-items: center;

@@ -1,5 +1,6 @@
 from datetime import datetime
 from unittest.mock import patch
+from urllib.error import URLError
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -71,6 +72,34 @@ class SendRemindersCommandTests(TestCase):
         self.assertIn("Vitamin D", message)
         self.assertNotIn("Bob Pill", message)
 
+    def test_skips_configs_with_no_topic_saved(self):
+        NtfyConfig.objects.create(user=self.user, topic="", reminder_time="20:00")
+        mock_send = self._run()
+        mock_send.assert_not_called()
+
+    def test_a_failed_send_does_not_block_other_users(self):
+        bob = User.objects.create_user("bob", password="pw")
+        Medication.objects.create(owner=bob, name="Bob Pill")
+        NtfyConfig.objects.create(user=self.user, topic="t-alice", reminder_time="20:00")
+        NtfyConfig.objects.create(user=bob, topic="t-bob", reminder_time="20:00")
+
+        def fail_for_alice(server_url, topic, *args, **kwargs):
+            if topic == "t-alice":
+                raise URLError("boom")
+
+        with patch(TIMEZONE_PATH) as mock_timezone, patch(SEND_NTFY_PATH) as mock_send:
+            mock_timezone.localtime.return_value = _fixed_now()
+            mock_send.side_effect = fail_for_alice
+            call_command("send_reminders")
+
+        self.assertEqual(mock_send.call_count, 2)
+        self.assertFalse(
+            NotificationLog.objects.filter(user=self.user, date=_fixed_now().date()).exists()
+        )
+        self.assertTrue(
+            NotificationLog.objects.filter(user=bob, date=_fixed_now().date()).exists()
+        )
+
 
 class NotificationSettingsViewTests(TestCase):
     def setUp(self):
@@ -106,6 +135,38 @@ class NotificationSettingsViewTests(TestCase):
         self.client.post(reverse("notifications:test"))
         mock_send.assert_called_once()
         self.assertEqual(mock_send.call_args.args[1], "my-topic")
+
+    @patch("apps.notifications.views.send_ntfy")
+    def test_send_test_before_any_save_does_not_crash(self, mock_send):
+        # No NtfyConfig created yet - get_or_create would build one with
+        # topic="" (SlugField has no default), which must not be sent.
+        response = self.client.post(reverse("notifications:test"))
+        self.assertEqual(response.status_code, 302)
+        mock_send.assert_not_called()
+
+    @patch("apps.notifications.views.send_ntfy")
+    def test_send_test_network_failure_does_not_crash(self, mock_send):
+        NtfyConfig.objects.create(user=self.user, topic="my-topic")
+        mock_send.side_effect = URLError("boom")
+        response = self.client.post(reverse("notifications:test"), follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Could not reach")
+
+    def test_save_shows_confirmation_message(self):
+        response = self.client.post(
+            reverse("notifications:settings"),
+            {"topic": "my-topic", "server_url": "https://ntfy.sh", "reminder_time": "19:30"},
+            follow=True,
+        )
+        self.assertContains(response, "Saved.")
+
+    def test_saved_settings_appear_in_summary(self):
+        self.client.post(
+            reverse("notifications:settings"),
+            {"topic": "my-topic", "server_url": "https://ntfy.sh", "reminder_time": "19:30"},
+        )
+        response = self.client.get(reverse("notifications:settings"))
+        self.assertContains(response, "my-topic")
 
     def test_anonymous_user_is_redirected_to_login(self):
         self.client.logout()

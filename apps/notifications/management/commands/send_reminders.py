@@ -1,3 +1,5 @@
+from urllib.error import URLError
+
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
@@ -14,6 +16,8 @@ class Command(BaseCommand):
         today = now.date()
 
         for config in NtfyConfig.objects.filter(enabled=True, reminder_time__lte=now.time()):
+            if not config.topic:
+                continue
             if NotificationLog.objects.filter(user=config.user, date=today).exists():
                 continue
 
@@ -23,11 +27,15 @@ class Command(BaseCommand):
             if not pending.exists():
                 continue
 
-            send_ntfy(
-                config.server_url,
-                config.topic,
-                "Medication reminder",
-                ", ".join(pending.values_list("name", flat=True)),
-                priority="high",
-            )
+            try:
+                send_ntfy(
+                    config.server_url,
+                    config.topic,
+                    "Medication reminder",
+                    ", ".join(pending.values_list("name", flat=True)),
+                    priority="high",
+                )
+            except URLError as exc:
+                self.stderr.write(f"Failed to notify {config.user}: {exc}")
+                continue
             NotificationLog.objects.create(user=config.user, date=today)
