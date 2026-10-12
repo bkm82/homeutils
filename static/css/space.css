@@ -499,6 +499,46 @@ h1, h2, h3 {
   color: var(--fg-bright);
 }
 
+.reminder-time-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 220px;
+}
+
+.reminder-time-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.75rem;
+  border-radius: 10px;
+  background: var(--bg-light);
+  font-family: var(--font-display);
+  color: var(--fg-bright);
+}
+
+.reminder-time-add {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.reminder-time-add input[type="time"] {
+  padding: 0.5rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--bg-light);
+  background: var(--bg-dark);
+  color: var(--fg-bright);
+  color-scheme: dark;
+}
+
+.reminder-time-add input[type="time"]:focus {
+  outline: 2px solid var(--accent);
+}
+
 .page-head {
   display: flex;
   align-items: center;

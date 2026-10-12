@@ -11,8 +11,13 @@
 <dl class="config-summary">
     <div><dt>Topic</dt><dd>{{ form.instance.topic }}</dd></div>
     <div><dt>Server</dt><dd>{{ form.instance.server_url }}</dd></div>
-    <div><dt>Remind at</dt><dd>{{ form.instance.reminder_time }}</dd></div>
     <div><dt>Status</dt><dd>{% if form.instance.enabled %}Enabled{% else %}Disabled{% endif %}</dd></div>
+    {% if form.instance.last_checked_at %}
+    <div><dt>Checked</dt><dd>{{ form.instance.last_checked_at|date:"M j, H:i" }}</dd></div>
+    {% endif %}
+    {% if form.instance.last_error %}
+    <div><dt>Last error</dt><dd>{{ form.instance.last_error }}</dd></div>
+    {% endif %}
 </dl>
 {% endif %}
 
@@ -22,14 +27,36 @@
     {{ form.topic }}
     <label class="field-label" for="{{ form.server_url.id_for_label }}">Server</label>
     {{ form.server_url }}
-    <label class="field-label" for="{{ form.reminder_time.id_for_label }}">Remind at</label>
-    {{ form.reminder_time }}
     <label class="field-label-inline">{{ form.enabled }} Enabled</label>
     <button class="btn btn-primary" type="submit">Save</button>
 </form>
 
+<div class="page-head" style="margin-top: 2rem;">
+    <h2>Reminder times</h2>
+</div>
+
+{% if reminder_times %}
+<ul class="reminder-time-list">
+    {% for reminder in reminder_times %}
+    <li>
+        <span>{{ reminder.time|time:"H:i" }}</span>
+        <form method="post" action="{% url 'notifications:remove_time' reminder.pk %}">
+            {% csrf_token %}
+            <button class="btn-ghost" type="submit" aria-label="Remove {{ reminder.time }}">&times;</button>
+        </form>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+<form class="reminder-time-add" method="post" action="{% url 'notifications:add_time' %}">
+    {% csrf_token %}
+    {{ time_form.time }}
+    <button class="btn" type="submit">+ Add</button>
+</form>
+
 {% if form.instance.topic %}
-<form method="post" action="{% url 'notifications:test' %}" style="margin-top: 0.75rem;">
+<form method="post" action="{% url 'notifications:test' %}" style="margin-top: 1.5rem;">
     {% csrf_token %}
     <button class="btn" type="submit">Send test</button>
 </form>
