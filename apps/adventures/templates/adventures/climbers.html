@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Climbers · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Adventures</h1>
+    <a class="btn btn-primary" href="{% url 'adventures:climber_add' %}">+ Climber</a>
+</div>
+{% include "adventures/partials/subnav.html" %}
+
+{% if climbers %}
+<ul class="item-list">
+    {% for climber, balance, todo_count in climbers %}
+    <li{% if not climber.is_active %} class="done"{% endif %}>
+        <div>
+            <a href="{% url 'adventures:climber' climber.pk %}">{{ climber.name }}</a>
+            <div class="option-reasons">{{ todo_count }} open to-do{{ todo_count|pluralize }}{% if climber.user %} · login {{ climber.user.get_username }}{% endif %}{% if not climber.is_active %} · not in the group this season{% endif %}</div>
+        </div>
+        <span class="balance{% if balance > 0.05 %} owed{% elif balance < -0.05 %} ahead{% endif %}">
+            {% if balance > 0.05 %}owed {{ balance|floatformat:1 }}{% elif balance < -0.05 %}ahead {{ balance|floatformat:1|cut:"-" }}{% else %}even{% endif %}
+        </span>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="empty-state"><div><a class="btn btn-primary" href="{% url 'adventures:climber_add' %}">+ Add the first climber</a></div></div>
+{% endif %}
+{% endblock %}

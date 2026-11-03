@@ -983,3 +983,49 @@ h1, h2, h3 {
     align-items: flex-start;
   }
 }
+
+.section-title {
+  margin: 2rem 0 0.75rem;
+  font-size: 1.15rem;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.balance {
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: var(--bg-dark);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.balance.owed {
+  color: var(--accent-bright);
+  border: 1px solid var(--accent);
+}
+
+.balance.ahead {
+  color: var(--cyan);
+}
+
+.rank {
+  font-family: var(--font-display);
+  color: var(--fg-dim);
+  margin-right: 0.3rem;
+}
+
+.log-checks {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.weekend-controls {
+  align-items: flex-start;
+  margin-bottom: 0.9rem;
+}

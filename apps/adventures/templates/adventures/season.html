@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Season · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Adventures</h1>
+</div>
+{% include "adventures/partials/subnav.html" %}
+
+<h2 class="section-title">Who's owed</h2>
+{% if rows %}
+<ul class="item-list">
+    {% for row in rows %}
+    <li>
+        <div>
+            <a href="{% url 'adventures:climber' row.climber.pk %}">{{ row.climber.name }}</a>
+            <div class="option-reasons">{{ row.weekends }} weekend{{ row.weekends|pluralize }} climbed · {{ row.value|floatformat:1 }} to-do value received</div>
+        </div>
+        <span class="balance{% if row.balance > 0.05 %} owed{% elif row.balance < -0.05 %} ahead{% endif %}">
+            {% if row.balance > 0.05 %}owed {{ row.balance|floatformat:1 }}{% elif row.balance < -0.05 %}ahead {{ row.balance|floatformat:1|cut:"-" }}{% else %}even{% endif %}
+        </span>
+    </li>
+    {% endfor %}
+</ul>
+<p class="footnote">A balance of 1 is roughly one weekend at someone's #1 to-do. After each climbed weekend, everyone who came is entitled to an equal share of what the crag was worth to the group. Rainouts change nothing, so whoever was owed stays first in line.</p>
+{% else %}
+<div class="empty-state"><div><a class="btn btn-primary" href="{% url 'adventures:climber_add' %}">+ Add a climber</a></div></div>
+{% endif %}
+
+{% if unlogged %}
+<h2 class="section-title">Not logged yet</h2>
+<div class="chip-row">
+    {% for saturday in unlogged %}
+    <a class="chip" href="{% url 'adventures:log' saturday|date:'Y-m-d' %}">{{ saturday|date:"M j" }}</a>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if logged %}
+<h2 class="section-title">History</h2>
+<ul class="item-list">
+    {% for weekend in logged %}
+    <li>
+        <div>
+            <a href="{% url 'adventures:log' weekend.saturday|date:'Y-m-d' %}">{{ weekend.saturday|date:"M j" }}</a>
+            · {% if weekend.outcome == "climbed" %}{{ weekend.area.name }}{% else %}Rained out{% endif %}
+            {% if weekend.credits.all %}
+            <div class="option-reasons">{% for credit in weekend.credits.all %}{{ credit.climber.name }} {{ credit.value|floatformat:1 }}{% if not forloop.last %} · {% endif %}{% endfor %} (share {{ weekend.credits.all.0.share|floatformat:1 }} each)</div>
+            {% endif %}
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

@@ -1,42 +1,41 @@
 <section class="weekend" id="weekend-{{ weekend.saturday|date:'Y-m-d' }}">
+    {% url 'adventures:weekend' weekend.saturday|date:'Y-m-d' as weekend_url %}
     <div class="weekend-head">
         <h2>{{ weekend.saturday|date:"M j" }} – {{ weekend.sunday|date:"M j" }}</h2>
-        <div class="weekend-controls">
-            {% url 'adventures:weekend' weekend.saturday|date:'Y-m-d' as weekend_url %}
-            <form class="priority-picker" method="post" action="{{ weekend_url }}"
-                  hx-post="{{ weekend_url }}" hx-target="closest .weekend" hx-swap="outerHTML">
-                {% csrf_token %}
-                <span class="picker-label">Whose weekend</span>
-                <button class="chip{% if not weekend.priority %} active{% endif %}" type="submit" name="person" value="">Anyone</button>
-                {% for person in people %}
-                <button class="chip{% if weekend.priority.pk == person.pk %} active{% endif %}" type="submit" name="person" value="{{ person.pk }}">{{ person.get_full_name|default:person.get_username }}</button>
-                {% endfor %}
-            </form>
-            <form class="priority-picker" method="post" action="{{ weekend_url }}"
-                  hx-post="{{ weekend_url }}" hx-target="closest .weekend" hx-swap="outerHTML">
-                {% csrf_token %}
-                <span class="picker-label">Focus</span>
-                {% for value, label in focuses %}
-                <button class="chip{% if weekend.focus == value %} active{% endif %}" type="submit" name="focus" value="{{ value }}">{% if value %}{{ label }}{% else %}None{% endif %}</button>
-                {% endfor %}
-            </form>
-        </div>
+        {% if weekend.saturday <= today %}
+        <a class="btn" href="{% url 'adventures:log' weekend.saturday|date:'Y-m-d' %}">{% if weekend.is_logged %}Logged{% else %}Log weekend{% endif %}</a>
+        {% endif %}
     </div>
 
-    {% if weekend.focus == "volume" or weekend.focus == "try_hard" %}
+    {% if weekend.is_logged %}
     <div class="focus-note">
-        {% with name=weekend.climber.get_full_name|default:weekend.climber.get_username %}
-        {% if weekend.focus == "volume" %}
-            {% if weekend.level.onsight %}
-            Volume for {{ name }}: ranking crags by routes at {{ weekend.level.volume_band_label }} (onsight {{ weekend.level.onsight_label }}).
-            {% else %}
-            No recent onsights for {{ name }} - <a href="{% url 'adventures:ticks' %}">import Mountain Project ticks</a> to rank by route volume.
-            {% endif %}
-        {% else %}
-            Try hard for {{ name }}{% if weekend.level.redpoint %} (redpoint {{ weekend.level.redpoint_label }}){% endif %}: crags with their open goals come first.
-        {% endif %}
-        {% endwith %}
+        {% if weekend.weekend.outcome == "climbed" %}Climbed at {{ weekend.weekend.area.name }}.{% else %}Rained out.{% endif %}
+        <a href="{% url 'adventures:season' %}">See the season</a>
     </div>
+    {% else %}
+    <div class="weekend-controls">
+        <form class="priority-picker" method="post" action="{{ weekend_url }}"
+              hx-post="{{ weekend_url }}" hx-target="closest .weekend" hx-swap="outerHTML">
+            {% csrf_token %}
+            <span class="picker-label">Who's in</span>
+            {% for climber in weekend.climbers %}
+            <button class="chip{% if climber.pk in weekend.attendee_ids %} active{% endif %}" type="submit" name="climber" value="{{ climber.pk }}">{{ climber.name }}</button>
+            {% endfor %}
+        </form>
+        <form class="priority-picker" method="post" action="{{ weekend_url }}"
+              hx-post="{{ weekend_url }}" hx-target="closest .weekend" hx-swap="outerHTML">
+            {% csrf_token %}
+            <span class="picker-label">Focus</span>
+            {% for value, label in focuses %}
+            <button class="chip{% if weekend.focus == value %} active{% endif %}" type="submit" name="focus" value="{{ value }}">{% if value %}{{ label }}{% else %}Fair share{% endif %}</button>
+            {% endfor %}
+        </form>
+    </div>
+
+    {% if weekend.focus == "volume" %}
+    <div class="focus-note">Volume: crags ranked by routes in everyone's onsight range (from their Mountain Project ticks), then by fair share.</div>
+    {% elif weekend.focus == "try_hard" %}
+    <div class="focus-note">Try hard: only projects count toward each crag.</div>
     {% endif %}
 
     {% for outlook in weekend.trips %}
@@ -48,7 +47,7 @@
                     <a href="{% url 'adventures:trip_edit' outlook.trip.pk %}">{{ outlook.trip.title }}</a>
                 </div>
                 <div class="option-reasons">
-                    {{ outlook.trip.get_activity_display }} · {{ outlook.trip.area.name }} · {{ outlook.trip.start_date|date:"M j" }}{% if outlook.trip.end_date != outlook.trip.start_date %}–{{ outlook.trip.end_date|date:"M j" }}{% endif %}{% if outlook.trip.with_whom %} · with {{ outlook.trip.with_whom }}{% endif %}
+                    {{ outlook.trip.area.name }} · {{ outlook.trip.start_date|date:"M j" }}{% if outlook.trip.end_date != outlook.trip.start_date %}–{{ outlook.trip.end_date|date:"M j" }}{% endif %}{% if outlook.trip.with_whom %} · with {{ outlook.trip.with_whom }}{% endif %}
                 </div>
             </div>
             {% if outlook.option %}<span class="verdict-badge">{{ outlook.option.verdict|capfirst }}</span>{% endif %}
@@ -60,7 +59,7 @@
             <div class="pivot">
                 <strong>Consider a pivot:</strong>
                 {% if outlook.alternatives %}
-                    {% for alt in outlook.alternatives %}{{ alt.activity_label }} at {{ alt.area.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                    {% for alt in outlook.alternatives %}{{ alt.area.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
                 {% else %}
                     nothing rates better this weekend.
                 {% endif %}
@@ -74,15 +73,15 @@
 
     {% if weekend.options %}
     <ol class="option-list">
-        {% for option in weekend.options|slice:":6" %}
+        {% for option in weekend.options|slice:":5" %}
             {% include "adventures/partials/option.html" %}
         {% endfor %}
     </ol>
-    {% if weekend.options|length > 6 %}
+    {% if weekend.options|length > 5 %}
     <details class="more-options">
-        <summary>{{ weekend.options|length|add:"-6" }} more</summary>
+        <summary>{{ weekend.options|length|add:"-5" }} more</summary>
         <ol class="option-list">
-            {% for option in weekend.options|slice:"6:" %}
+            {% for option in weekend.options|slice:"5:" %}
                 {% include "adventures/partials/option.html" %}
             {% endfor %}
         </ol>
@@ -90,5 +89,6 @@
     {% endif %}
     {% else %}
     <div class="option-reasons">No forecast available - Open-Meteo may be unreachable.</div>
+    {% endif %}
     {% endif %}
 </section>

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Log {{ saturday|date:"M j" }} · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Weekend of {{ saturday|date:"M j" }}</h1>
+</div>
+{% include "adventures/partials/subnav.html" %}
+
+{% if weekend.outcome %}
+<div class="focus-note">
+    {% if weekend.outcome == "climbed" %}Climbed at {{ weekend.area.name }}.{% else %}Rained out - nobody was credited.{% endif %}
+</div>
+{% if credits %}
+<ul class="item-list">
+    {% for credit in credits %}
+    <li><div>{{ credit.climber.name }}<div class="option-reasons">got {{ credit.value|floatformat:2 }} of a {{ credit.share|floatformat:2 }} share</div></div></li>
+    {% endfor %}
+</ul>
+{% endif %}
+<form method="post" action="{% url 'adventures:undo_log' saturday|date:'Y-m-d' %}" style="margin-top: 1.5rem;">
+    {% csrf_token %}
+    <button class="btn" type="submit">Undo this log</button>
+</form>
+{% else %}
+{% url 'adventures:log_todos' saturday|date:'Y-m-d' as todos_url %}
+<form class="med-form" method="post">
+    {% csrf_token %}
+    <span class="field-label">What happened</span>
+    <label class="field-label-inline"><input type="radio" name="outcome" value="climbed" checked> We climbed</label>
+    <label class="field-label-inline"><input type="radio" name="outcome" value="rained_out"> Rained out (no pivot)</label>
+
+    <span class="field-label">Who came</span>
+    {% for climber in climbers %}
+    <label class="field-label-inline">
+        <input type="checkbox" name="attendees" value="{{ climber.pk }}"{% if climber.pk in attendee_ids %} checked{% endif %}
+               hx-get="{{ todos_url }}" hx-include="closest form" hx-target="#log-todos" hx-trigger="change">
+        {{ climber.name }}
+    </label>
+    {% endfor %}
+
+    <label class="field-label" for="log-area">Where</label>
+    <select id="log-area" name="area" hx-get="{{ todos_url }}" hx-include="closest form" hx-target="#log-todos" hx-trigger="change">
+        <option value="">—</option>
+        {% for area in areas %}<option value="{{ area.pk }}">{{ area.name }}</option>{% endfor %}
+    </select>
+
+    <div id="log-todos"></div>
+    <button class="btn btn-primary" type="submit">Log weekend</button>
+</form>
+{% endif %}
+{% endblock %}

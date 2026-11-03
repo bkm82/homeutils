@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 
 from . import openbeta
-from .models import Activity, Area, Goal, Trip
+from .models import Area, Climber, ToDo, Trip
 
 
 class PersonChoiceField(forms.ModelChoiceField):
@@ -25,9 +25,6 @@ class UUIDListField(forms.CharField):
 
 
 class AreaForm(forms.ModelForm):
-    activities = forms.MultipleChoiceField(
-        choices=Activity.choices, widget=forms.CheckboxSelectMultiple
-    )
     openbeta_uuids = UUIDListField(
         required=False,
         label="OpenBeta areas",
@@ -42,7 +39,6 @@ class AreaForm(forms.ModelForm):
             "name",
             "latitude",
             "longitude",
-            "activities",
             "sandstone",
             "notes",
             "openbeta_uuids",
@@ -53,28 +49,38 @@ class AreaForm(forms.ModelForm):
         }
 
 
-class GoalForm(forms.ModelForm):
-    owner = PersonChoiceField(queryset=get_user_model().objects.none(), label="Whose goal")
+class ClimberForm(forms.ModelForm):
+    user = PersonChoiceField(
+        queryset=get_user_model().objects.none(),
+        required=False,
+        label="Login (optional)",
+        help_text="Link a login so this climber's profile is theirs by default.",
+    )
 
     class Meta:
-        model = Goal
-        fields = ["name", "area", "activity", "grade", "owner", "notes"]
-        widgets = {
-            "name": forms.TextInput(
-                attrs={"placeholder": "e.g. Paradise Forks - Pine Tree Arete"}
-            ),
-            "grade": forms.TextInput(attrs={"placeholder": "e.g. 5.11a"}),
-        }
+        model = Climber
+        fields = ["name", "user", "is_active"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["owner"].queryset = get_user_model().objects.filter(is_active=True)
+        self.fields["user"].queryset = get_user_model().objects.filter(is_active=True)
+        self.fields["is_active"].label = "In the group this season"
+
+
+class ToDoForm(forms.ModelForm):
+    class Meta:
+        model = ToDo
+        fields = ["name", "area", "grade", "is_project", "notes"]
+        widgets = {
+            "name": forms.TextInput(attrs={"placeholder": "e.g. Pine Tree Arete"}),
+            "grade": forms.TextInput(attrs={"placeholder": "e.g. 5.11a"}),
+        }
 
 
 class TripForm(forms.ModelForm):
     class Meta:
         model = Trip
-        fields = ["title", "area", "activity", "start_date", "end_date", "with_whom", "notes"]
+        fields = ["title", "area", "start_date", "end_date", "with_whom", "notes"]
         widgets = {
             "title": forms.TextInput(attrs={"placeholder": "e.g. Moab with the crew"}),
             "start_date": forms.DateInput(attrs={"type": "date"}),

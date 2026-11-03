@@ -2,18 +2,20 @@
     <div class="option-main">
         <span class="verdict-dot" aria-label="{{ option.verdict }}"></span>
         <div>
-            <div class="option-title">{{ option.activity_label }} · {{ option.area.name }}</div>
+            <div class="option-title">{{ option.area.name }}</div>
             {% if option.reasons %}<div class="option-reasons">{{ option.reasons|join:" · " }}</div>{% endif %}
-            {% if option.volume_count is not None %}<div class="volume-count">{{ option.volume_count }} route{{ option.volume_count|pluralize }} in the volume range</div>{% endif %}
-            {% if option.goals %}
+            {% if option.volume_count is not None %}<div class="volume-count">{{ option.volume_count }} route{{ option.volume_count|pluralize }} in the group's volume ranges</div>{% endif %}
+            {% if option.served %}
             <ul class="goal-tags">
-                {% for goal in option.goals %}
-                <li class="goal-tag{% if goal in option.priority_goals %} priority{% endif %}">
-                    {{ goal.name }}{% if goal.grade %} {{ goal.grade }}{% endif %}
-                    <span>· {{ goal.owner.get_full_name|default:goal.owner.get_username }}</span>
+                {% for served in option.served %}
+                <li class="goal-tag{% if served.need > 1 %} priority{% endif %}" title="Need weight {{ served.need|floatformat:2 }} × crag value {{ served.value|floatformat:2 }}">
+                    {{ served.climber.name }}
+                    <span>· {% for todo in served.todos|slice:":2" %}#{{ todo.rank }} {{ todo.name }}{% if todo.is_project %} (project){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if served.todos|length > 2 %} +{{ served.todos|length|add:"-2" }}{% endif %}</span>
                 </li>
                 {% endfor %}
             </ul>
+            {% else %}
+            <div class="option-reasons">Nobody going has a to-do here.</div>
             {% endif %}
         </div>
     </div>
