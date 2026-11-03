@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}{{ climber.name }} · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>{{ climber.name }}</h1>
+    <a class="btn" href="{% url 'adventures:climber_edit' climber.pk %}">Edit</a>
+</div>
+{% include "adventures/partials/subnav.html" %}
+
+<dl class="config-summary level-summary">
+    <div><dt>Season</dt><dd>{% if balance > 0.05 %}owed {{ balance|floatformat:1 }}{% elif balance < -0.05 %}ahead {{ balance|floatformat:1|cut:"-" }}{% else %}even{% endif %}</dd></div>
+    <div><dt>Onsight</dt><dd>{{ level.onsight_label|default:"—" }}</dd></div>
+    <div><dt>Redpoint</dt><dd>{{ level.redpoint_label|default:"—" }}</dd></div>
+</dl>
+
+<div class="page-head" style="margin-top: 1.5rem;">
+    <h2>To-do list</h2>
+    <a class="btn btn-primary" href="{% url 'adventures:todo_add' climber.pk %}">+ To-do</a>
+</div>
+{% if open_todos %}
+<ol class="item-list">
+    {% for todo, weight in open_todos %}
+    <li>
+        <div>
+            <span class="rank">#{{ todo.rank }}</span>
+            <a href="{% url 'adventures:todo_edit' todo.pk %}">{{ todo.name }}</a>{% if todo.grade %} <span class="grade">{{ todo.grade }}</span>{% endif %}
+            <div class="option-reasons">{{ todo.area.name }}{% if todo.is_project %} · project{% endif %}{% if todo.sessions %} · {{ todo.sessions }} session{{ todo.sessions|pluralize }}{% endif %} · weight {{ weight|floatformat:2 }}</div>
+        </div>
+        <div class="card-actions">
+            {% if not forloop.first %}
+            <form method="post" action="{% url 'adventures:todo_move' todo.pk 'up' %}">{% csrf_token %}<button class="btn-ghost" type="submit" aria-label="Move {{ todo.name }} up">↑</button></form>
+            {% endif %}
+            {% if not forloop.last %}
+            <form method="post" action="{% url 'adventures:todo_move' todo.pk 'down' %}">{% csrf_token %}<button class="btn-ghost" type="submit" aria-label="Move {{ todo.name }} down">↓</button></form>
+            {% endif %}
+            <form method="post" action="{% url 'adventures:todo_send' todo.pk %}">
+                {% csrf_token %}
+                <button class="btn-ghost check" type="submit" aria-label="Mark {{ todo.name }} sent">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="4 12 9 17 20 6" /></svg>
+                </button>
+            </form>
+        </div>
+    </li>
+    {% endfor %}
+</ol>
+<p class="footnote">Order matters: #1 is worth 1, #2 is worth ½, #3 is worth ⅓, and so on, when picking where the group goes.</p>
+{% else %}
+<p class="option-reasons">No open to-dos yet.</p>
+{% endif %}
+
+{% if sent_todos %}
+<h2 class="section-title">Sent</h2>
+<ul class="item-list">
+    {% for todo in sent_todos %}
+    <li class="done">
+        <div>
+            {{ todo.name }}{% if todo.grade %} <span class="grade">{{ todo.grade }}</span>{% endif %}
+            <div class="option-reasons">{{ todo.area.name }} · sent {{ todo.sent_on|date:"M j, Y" }}{% if todo.sessions %} after {{ todo.sessions }} session{{ todo.sessions|pluralize }}{% endif %}</div>
+        </div>
+        <form method="post" action="{% url 'adventures:todo_send' todo.pk %}">
+            {% csrf_token %}
+            <button class="btn-ghost check checked" type="submit" aria-label="Put {{ todo.name }} back on the list">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="4 12 9 17 20 6" /></svg>
+            </button>
+        </form>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+<h2 class="section-title">Mountain Project ticks</h2>
+<form class="med-form" method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label class="field-label" for="{{ tick_form.file.id_for_label }}">{{ tick_form.file.label }}</label>
+    {{ tick_form.file }}
+    {{ tick_form.file.errors }}
+    <small class="field-help">On Mountain Project: profile → Ticks → Export CSV. Importing replaces the previous import. Levels are the average of the 3 hardest clean leads in the last {{ window_days }} days.</small>
+    <button class="btn" type="submit">Import ticks</button>
+</form>
+{% if recent_ticks %}
+<ul class="item-list" style="margin-top: 1rem;">
+    {% for tick in recent_ticks %}
+    <li>
+        <div>
+            {% if tick.url %}<a href="{{ tick.url }}" rel="noopener">{{ tick.route }}</a>{% else %}{{ tick.route }}{% endif %}
+            <span class="grade">{{ tick.rating }}</span>
+            <div class="option-reasons">{{ tick.date|date:"M j, Y" }}{% if tick.lead_style %} · {{ tick.lead_style }}{% elif tick.style %} · {{ tick.style }}{% endif %}</div>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

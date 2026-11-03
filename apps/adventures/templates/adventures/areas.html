@@ -5,7 +5,7 @@
 {% block content %}
 <div class="page-head">
     <h1>Adventures</h1>
-    <a class="btn btn-primary" href="{% url 'adventures:area_add' %}">+ Area</a>
+    <a class="btn btn-primary" href="{% url 'adventures:area_add' %}">+ Crag</a>
 </div>
 {% include "adventures/partials/subnav.html" %}
 
@@ -19,7 +19,7 @@
     <li>
         <div>
             <a href="{% url 'adventures:area_edit' area.pk %}">{{ area.name }}</a>
-            <div class="option-reasons">{{ area.get_activities_display|join:", " }}{% if area.sandstone %} · sandstone{% endif %}{% if area.notes %} · {{ area.notes }}{% endif %}</div>
+            <div class="option-reasons">{% if area.sandstone %}Sandstone{% else %}Hard rock{% endif %}{% if area.notes %} · {{ area.notes }}{% endif %}</div>
             {% if area.grade_counts_updated_at %}
             <div class="option-reasons">{{ area.route_total }} climbs on OpenBeta · updated {{ area.grade_counts_updated_at|timesince }} ago</div>
             {% elif area.openbeta_uuids %}

@@ -1,0 +1,17 @@
+{% if todos %}
+<span class="field-label">To-dos worked</span>
+<ul class="item-list">
+    {% for todo in todos %}
+    <li>
+        <div>
+            {{ todo.climber.name }}: #{{ todo.rank }} {{ todo.name }}{% if todo.grade %} <span class="grade">{{ todo.grade }}</span>{% endif %}
+            <div class="option-reasons">{{ todo.sessions }} session{{ todo.sessions|pluralize }} so far</div>
+        </div>
+        <div class="log-checks">
+            <label class="field-label-inline"><input type="checkbox" name="worked" value="{{ todo.pk }}"> Worked</label>
+            <label class="field-label-inline"><input type="checkbox" name="sent" value="{{ todo.pk }}"> Sent</label>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}

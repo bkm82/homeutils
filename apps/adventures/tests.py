@@ -3,13 +3,15 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from . import conditions, grades, openbeta, selectors, weather
+from . import conditions, grades, ledger, openbeta, selectors, weather
 from .grades import ClimbingLevel
-from .models import Activity, Area, Focus, ForecastCache, Goal, Tick, Trip, Weekend
+from .models import Area, Climber, Credit, Focus, ForecastCache, Tick, ToDo, Trip, Weekend
 from .weather import DayForecast, parse_daily
 
 User = get_user_model()
@@ -135,43 +137,21 @@ class OpenBetaTests(TestCase):
 
 
 class ConditionsTests(TestCase):
-    def test_dry_mild_day_is_go_for_climbing(self):
-        rating = conditions.rate(Activity.CLIMBING, _day(SATURDAY), [])
-        self.assertEqual(rating.verdict, "go")
+    def test_dry_mild_day_is_go(self):
+        self.assertEqual(conditions.rate(_day(SATURDAY), []).verdict, "go")
 
-    def test_rain_rules_out_climbing_but_hiking_is_still_marginal(self):
+    def test_rain_is_no(self):
         wet = _day(SATURDAY, precip=0.4, precip_chance=80, code=63)
-        self.assertEqual(conditions.rate(Activity.CLIMBING, wet, []).verdict, "no")
-        self.assertEqual(conditions.rate(Activity.HIKING, wet, []).verdict, "marginal")
+        self.assertEqual(conditions.rate(wet, []).verdict, "no")
 
     def test_recent_rain_rules_out_sandstone_only(self):
         prior = [_day(SATURDAY - timedelta(days=1), precip=0.3)]
         dry = _day(SATURDAY)
-        self.assertEqual(
-            conditions.rate(Activity.CLIMBING, dry, prior, sandstone=True).verdict, "no"
-        )
-        self.assertEqual(conditions.rate(Activity.CLIMBING, dry, prior).verdict, "go")
+        self.assertEqual(conditions.rate(dry, prior, sandstone=True).verdict, "no")
+        self.assertEqual(conditions.rate(dry, prior).verdict, "go")
 
-    def test_cold_day_is_poor_for_climbing(self):
-        rating = conditions.rate(Activity.CLIMBING, _day(SATURDAY, high=33), [])
-        self.assertEqual(rating.verdict, "no")
-
-    def test_fresh_snow_makes_skiing_go(self):
-        prior = [_day(SATURDAY - timedelta(days=1), snowfall=8, high=28, code=73)]
-        rating = conditions.rate(Activity.SKIING, _day(SATURDAY, high=30), prior)
-        self.assertEqual(rating.verdict, "go")
-
-    def test_warm_dry_day_is_no_for_skiing(self):
-        self.assertEqual(conditions.rate(Activity.SKIING, _day(SATURDAY), []).verdict, "no")
-
-    def test_ice_needs_a_sustained_freeze(self):
-        cold = [_day(SATURDAY - timedelta(days=n), high=25) for n in (3, 2, 1)]
-        self.assertEqual(
-            conditions.rate(Activity.ICE, _day(SATURDAY, high=28), cold).verdict, "go"
-        )
-        self.assertEqual(
-            conditions.rate(Activity.ICE, _day(SATURDAY, high=45), cold).verdict, "no"
-        )
+    def test_cold_day_is_no(self):
+        self.assertEqual(conditions.rate(_day(SATURDAY, high=33), []).verdict, "no")
 
 
 class WeatherTests(TestCase):
@@ -181,7 +161,7 @@ class WeatherTests(TestCase):
         self.assertEqual([d.date for d in parse_daily(daily)], [SATURDAY])
 
     def test_get_forecasts_uses_cache_until_stale(self):
-        area = Area.objects.create(name="Crag", latitude=1, longitude=2, activities=["climbing"])
+        area = Area.objects.create(name="Crag", latitude=1, longitude=2)
         with patch(FETCH_PATH, return_value=[_daily(SATURDAY, [{}])]) as fetch:
             weather.get_forecasts([area])
             weather.get_forecasts([area])
@@ -193,7 +173,7 @@ class WeatherTests(TestCase):
         self.assertEqual(fetch.call_count, 1)
 
     def test_fetch_failure_falls_back_to_stale_cache(self):
-        area = Area.objects.create(name="Crag", latitude=1, longitude=2, activities=["climbing"])
+        area = Area.objects.create(name="Crag", latitude=1, longitude=2)
         ForecastCache.objects.create(
             area=area,
             latitude=1,
@@ -206,259 +186,365 @@ class WeatherTests(TestCase):
         self.assertEqual(len(forecasts[area.id]), 1)
 
 
+def _todo(climber, area, rank, **kwargs):
+    return ToDo.objects.create(
+        climber=climber, area=area, rank=rank, name=f"{climber}-{area}-{rank}", **kwargs
+    )
+
+
+class LedgerTests(TestCase):
+    def setUp(self):
+        self.a = Area.objects.create(name="A", latitude=0, longitude=0)
+        self.b = Area.objects.create(name="B", latitude=0, longitude=0)
+        self.me = Climber.objects.create(name="Me")
+        self.you = Climber.objects.create(name="You")
+
+    def test_weights_follow_list_position_and_skip_sends(self):
+        first = _todo(self.me, self.a, 1)
+        sent = _todo(self.me, self.a, 2, sent_on=SATURDAY)
+        third = _todo(self.me, self.b, 3)
+        weights = ledger.todo_weights([first, sent, third])
+        self.assertEqual(weights, {first.pk: 1.0, third.pk: 0.5})
+
+    def test_crag_values_sum_weights_and_can_count_projects_only(self):
+        todos = [
+            _todo(self.me, self.a, 1, is_project=True),
+            _todo(self.me, self.a, 2),
+            _todo(self.me, self.b, 3),
+        ]
+        self.assertEqual(
+            ledger.crag_values(todos),
+            {(self.me.pk, self.a.pk): 1.5, (self.me.pk, self.b.pk): 1 / 3},
+        )
+        self.assertEqual(
+            ledger.crag_values(todos, projects_only=True), {(self.me.pk, self.a.pk): 1.0}
+        )
+
+    def test_split_credit_gives_everyone_an_equal_share(self):
+        values = {(self.me.pk, self.a.pk): 1.0}
+        credits = ledger.split_credit([self.me.pk, self.you.pk], self.a.pk, values)
+        self.assertEqual(credits, [(self.me.pk, 1.0, 0.5), (self.you.pk, 0.0, 0.5)])
+
+    def test_balances_and_need(self):
+        weekend = Weekend.objects.create(saturday=SATURDAY)
+        Credit.objects.create(weekend=weekend, climber=self.me, value=1.0, share=0.5)
+        Credit.objects.create(weekend=weekend, climber=self.you, value=0.0, share=0.5)
+        balances = ledger.balances(Credit.objects.all())
+        self.assertEqual(balances, {self.me.pk: -0.5, self.you.pk: 0.5})
+        self.assertEqual(ledger.need_weight(0.5), 1.5)
+        self.assertEqual(ledger.need_weight(-5), ledger.MIN_NEED_WEIGHT)
+
+
 class SelectorTests(TestCase):
     def setUp(self):
         Area.objects.all().delete()  # drop the seeded starter areas
-        self.me = User.objects.create_user("me", password="pw")
-        self.partner = User.objects.create_user("partner", password="pw")
-        self.dry = Area.objects.create(
-            name="Dry crag", latitude=1, longitude=1, activities=["climbing", "hiking"]
-        )
-        self.wet = Area.objects.create(
-            name="Wet crag", latitude=2, longitude=2, activities=["climbing", "hiking"]
-        )
-        self.areas = [self.dry, self.wet]
-        rain = {"precip": 0.5, "precip_chance": 90, "code": 63}
+        self.peaks = Area.objects.create(name="Peaks", latitude=1, longitude=1)
+        self.sedona = Area.objects.create(name="Sedona", latitude=2, longitude=2, sandstone=True)
+        self.areas = [self.peaks, self.sedona]
+        self.me = Climber.objects.create(name="Me")
+        self.you = Climber.objects.create(name="You")
+        self.climbers = [self.me, self.you]
         start = SATURDAY - timedelta(days=3)
-        self.forecasts = {
-            self.dry.id: parse_daily(_daily(start, [{}] * 5)),
-            self.wet.id: parse_daily(_daily(start, [{}, {}, {}, rain, rain])),
-        }
+        dry = parse_daily(_daily(start, [{}] * 5))
+        self.forecasts = {self.peaks.id: dry, self.sedona.id: dry}
 
-    def _weekend(self, priority=None, goals=(), trips=(), **kwargs):
+    def _weekend(self, attendees=None, balances=None, focus=Focus.NONE, levels=None, trips=()):
+        weekend = Weekend(saturday=SATURDAY, focus=focus)
         return selectors.build_weekend(
-            SATURDAY, priority, self.areas, self.forecasts, list(goals), list(trips), **kwargs
+            SATURDAY,
+            weekend,
+            self.climbers,
+            self.climbers if attendees is None else attendees,
+            self.areas,
+            self.forecasts,
+            list(ToDo.objects.filter(sent_on__isnull=True)),
+            balances or {},
+            levels or {},
+            list(trips),
         )
 
     def test_weekend_saturdays(self):
         self.assertEqual(selectors.weekend_saturdays(date(2026, 11, 2))[0], SATURDAY)  # Mon
-        self.assertEqual(selectors.weekend_saturdays(SATURDAY)[0], SATURDAY)
         self.assertEqual(selectors.weekend_saturdays(SATURDAY + timedelta(days=1))[0], SATURDAY)
         self.assertEqual(len(selectors.weekend_saturdays(date(2026, 11, 2))), 2)
 
-    def test_dry_climbing_ranks_first(self):
+    def test_crag_with_biggest_todos_wins(self):
+        _todo(self.me, self.peaks, 1, is_project=True)
+        _todo(self.you, self.sedona, 3)
+        _todo(self.you, self.peaks, 1)
         top = self._weekend().options[0]
-        self.assertEqual((top.area, top.activity), (self.dry, "climbing"))
+        self.assertEqual(top.area, self.peaks)
+        self.assertEqual({s.climber for s in top.served}, {self.me, self.you})
 
-    def test_priority_goal_breaks_ties_between_go_options(self):
-        goal = Goal.objects.create(
-            owner=self.partner, name="Hard thing", area=self.dry, activity="hiking"
-        )
-        top = self._weekend(priority=self.partner, goals=[goal]).options[0]
-        self.assertEqual(top.activity, "hiking")
-        self.assertEqual(top.priority_goals, [goal])
+    def test_whoever_is_owed_pulls_the_pick(self):
+        _todo(self.me, self.peaks, 1)
+        _todo(self.you, self.sedona, 1)
+        top = self._weekend(balances={self.you.pk: 0.5, self.me.pk: -0.5}).options[0]
+        self.assertEqual(top.area, self.sedona)
 
-    def test_priority_goal_does_not_lift_a_no_go_option(self):
-        goal = Goal.objects.create(owner=self.me, name="Wet project", area=self.wet)
-        top = self._weekend(priority=self.me, goals=[goal]).options[0]
-        self.assertEqual(top.area, self.dry)
+    def test_only_attendees_count(self):
+        _todo(self.me, self.peaks, 1)
+        _todo(self.you, self.sedona, 1)
+        _todo(self.you, self.sedona, 2)
+        top = self._weekend(attendees=[self.me]).options[0]
+        self.assertEqual(top.area, self.peaks)
+
+    def test_weather_outranks_fairness(self):
+        _todo(self.me, self.sedona, 1)
+        rain = {"precip": 0.5, "precip_chance": 90, "code": 63}
+        start = SATURDAY - timedelta(days=3)
+        self.forecasts[self.sedona.id] = parse_daily(_daily(start, [{}, {}, {}, rain, rain]))
+        self.assertEqual(self._weekend().options[0].area, self.peaks)
+
+    def test_try_hard_counts_only_projects(self):
+        _todo(self.me, self.peaks, 1)
+        _todo(self.me, self.peaks, 2)
+        _todo(self.you, self.sedona, 2, is_project=True)
+        self.assertEqual(self._weekend().options[0].area, self.peaks)
+        self.assertEqual(self._weekend(focus=Focus.TRY_HARD).options[0].area, self.sedona)
+
+    def test_volume_focus_ranks_by_routes_in_attendees_bands(self):
+        _todo(self.me, self.peaks, 1)
+        self.sedona.grade_counts = {"5.10": 40, "5.12a": 5}
+        self.peaks.grade_counts = {"5.10a": 3}
+        levels = {self.me.pk: ClimbingLevel(onsight=10.5, redpoint=11.5)}
+        top = self._weekend(focus=Focus.VOLUME, levels=levels).options[0]
+        self.assertEqual((top.area, top.volume_count), (self.sedona, 40))
 
     def test_rained_out_trip_suggests_pivots(self):
+        rain = {"precip": 0.5, "precip_chance": 90, "code": 63}
+        start = SATURDAY - timedelta(days=3)
+        self.forecasts[self.sedona.id] = parse_daily(_daily(start, [{}, {}, {}, rain, rain]))
         trip = Trip.objects.create(
-            title="Crew trip",
-            area=self.wet,
-            activity="climbing",
-            start_date=SATURDAY,
-            end_date=SATURDAY + timedelta(days=1),
+            title="Crew trip", area=self.sedona, start_date=SATURDAY, end_date=SATURDAY
         )
         [outlook] = self._weekend(trips=[trip]).trips
         self.assertEqual(outlook.option.verdict, "no")
-        self.assertIn((self.dry, "climbing"), [(o.area, o.activity) for o in outlook.alternatives])
-
-    def _second_dry_crag(self, **kwargs):
-        crag = Area.objects.create(
-            name="Other dry crag", latitude=3, longitude=3, activities=["climbing"], **kwargs
-        )
-        self.areas.append(crag)
-        self.forecasts[crag.id] = self.forecasts[self.dry.id]
-        return crag
-
-    def test_volume_focus_ranks_by_routes_in_onsight_band(self):
-        self.dry.grade_counts = {"5.10a": 3, "5.12a": 200}
-        busy = self._second_dry_crag(grade_counts={"5.10": 40, "5.10a": 10})
-        level = ClimbingLevel(onsight=10.5, redpoint=11.75)
-        weekend = self._weekend(focus=Focus.VOLUME, climber=self.me, level=level)
-        top = weekend.options[0]
-        self.assertEqual((top.area, top.volume_count), (busy, 50))
-        dry = next(o for o in weekend.options if o.area == self.dry and o.activity == "climbing")
-        self.assertEqual(dry.volume_count, 3)
-
-    def test_try_hard_focus_prefers_climbers_projects(self):
-        project_crag = self._second_dry_crag()
-        Goal.objects.create(owner=self.partner, name="Not mine", area=self.dry)
-        mine = Goal.objects.create(owner=self.me, name="Project", area=project_crag)
-        top = self._weekend(
-            goals=list(Goal.objects.all()), focus=Focus.TRY_HARD, climber=self.me
-        ).options[0]
-        self.assertEqual(top.area, project_crag)
-        self.assertEqual(top.goals, [mine])
-
-    def test_rest_focus_puts_hiking_first(self):
-        top = self._weekend(focus=Focus.REST).options[0]
-        self.assertEqual((top.area, top.activity), (self.dry, "hiking"))
-
-    def test_focus_never_outranks_weather(self):
-        self.wet.grade_counts = {"5.10": 500}
-        level = ClimbingLevel(onsight=10.5, redpoint=None)
-        top = self._weekend(focus=Focus.VOLUME, climber=self.me, level=level).options[0]
-        self.assertEqual(top.area, self.dry)
-
-    def test_trip_outside_forecast_has_no_rating(self):
-        trip = Trip.objects.create(
-            title="Far off",
-            area=self.dry,
-            start_date=SATURDAY - timedelta(days=30),
-            end_date=SATURDAY + timedelta(days=30),
-        )
-        self.forecasts = {}
-        [outlook] = self._weekend(trips=[trip]).trips
-        self.assertIsNone(outlook.option)
+        self.assertEqual([o.area for o in outlook.alternatives], [self.peaks])
 
 
 class ViewTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user("me", password="pw")
         self.client.force_login(self.user)
-        self.area = Area.objects.get(name="Sedona")
+        self.peaks = Area.objects.get(name="Flagstaff")
+        self.sedona = Area.objects.get(name="Sedona")
+        self.me = Climber.objects.create(name="Me", user=self.user)
+        self.you = Climber.objects.create(name="You")
+        # Only weekends that have started can be logged.
+        self.past = selectors.weekend_saturdays(timezone.localdate())[0] - timedelta(weeks=1)
+
+    def _post_log(self, **data):
+        data.setdefault("outcome", "climbed")
+        data.setdefault("attendees", [self.me.pk, self.you.pk])
+        return self.client.post(reverse("adventures:log", args=[self.past.isoformat()]), data)
 
     def test_planner_renders_with_api_down(self):
         with patch(FETCH_PATH, side_effect=OSError("offline")):
             response = self.client.get(reverse("adventures:planner"))
-        self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No forecast available")
 
-    def test_planner_renders_forecast(self):
+    def test_planner_shows_who_a_crag_serves(self):
+        _todo(self.me, self.sedona, 1, is_project=True)
+
         def fake_fetch(points):
             return [_daily(timezone.localdate() - timedelta(days=3), [{}] * 19) for _ in points]
 
         with patch(FETCH_PATH, side_effect=fake_fetch):
             response = self.client.get(reverse("adventures:planner"))
-        self.assertContains(response, "Climbing · Sedona")
+        self.assertContains(response, "(project)")
 
-    def test_set_priority(self):
+    def test_toggle_attendee_starts_from_everyone(self):
         url = reverse("adventures:weekend", args=[SATURDAY.isoformat()])
-        self.client.post(url, {"person": self.user.pk})
-        self.assertEqual(Weekend.objects.get(saturday=SATURDAY).priority, self.user)
-        self.client.post(url, {"person": ""})
-        self.assertIsNone(Weekend.objects.get(saturday=SATURDAY).priority)
+        self.client.post(url, {"climber": self.you.pk})
+        self.assertEqual(list(Weekend.objects.get().attendees.all()), [self.me])
+        self.client.post(url, {"climber": self.you.pk})
+        self.assertEqual(Weekend.objects.get().attendees.count(), 2)
 
-    def test_set_priority_rejects_non_saturday(self):
+    def test_set_focus(self):
+        url = reverse("adventures:weekend", args=[SATURDAY.isoformat()])
+        self.client.post(url, {"focus": "try_hard"})
+        self.assertEqual(Weekend.objects.get().focus, "try_hard")
+        self.assertEqual(self.client.post(url, {"focus": "rest"}).status_code, 400)
+
+    def test_non_saturday_is_404(self):
         url = reverse("adventures:weekend", args=[(SATURDAY + timedelta(days=1)).isoformat()])
-        self.assertEqual(self.client.post(url, {"person": ""}).status_code, 400)
+        self.assertEqual(self.client.post(url, {"focus": ""}).status_code, 404)
 
-    def test_set_focus_keeps_priority(self):
-        url = reverse("adventures:weekend", args=[SATURDAY.isoformat()])
-        self.client.post(url, {"person": self.user.pk})
-        self.client.post(url, {"focus": "volume"})
-        weekend = Weekend.objects.get(saturday=SATURDAY)
-        self.assertEqual((weekend.priority, weekend.focus), (self.user, "volume"))
-        self.assertEqual(self.client.post(url, {"focus": "bogus"}).status_code, 400)
+    def test_log_climbed_weekend_credits_and_records_send(self):
+        project = _todo(self.me, self.peaks, 1, is_project=True)
+        _todo(self.me, self.peaks, 2)
+        _todo(self.you, self.sedona, 1)
+        self._post_log(area=self.peaks.pk, worked=[project.pk], sent=[project.pk])
 
-    def test_planner_volume_note_uses_imported_level(self):
-        Weekend.objects.create(
-            saturday=selectors.weekend_saturdays(timezone.localdate())[0], focus="volume"
+        credits = {c.climber: (c.value, c.share) for c in Credit.objects.all()}
+        self.assertEqual(credits, {self.me: (1.5, 0.75), self.you: (0.0, 0.75)})
+        project.refresh_from_db()
+        self.assertEqual((project.sessions, project.sent_on), (1, self.past + timedelta(days=1)))
+        # The send moved the remaining to-do up to #1.
+        self.assertEqual(
+            list(self.me.todos.filter(sent_on__isnull=True).values_list("rank", flat=True)), [1]
         )
-        Tick.objects.create(
-            owner=self.user,
-            date=timezone.localdate(),
-            route="R",
-            rating="5.10c",
-            grade=10.5,
-            lead_style="Onsight",
+
+        balances = selectors.season_balances()
+        self.assertEqual(balances, {self.me.pk: -0.75, self.you.pk: 0.75})
+
+    def test_log_ignores_todos_from_other_crags(self):
+        elsewhere = _todo(self.me, self.sedona, 1)
+        self._post_log(area=self.peaks.pk, sent=[elsewhere.pk])
+        elsewhere.refresh_from_db()
+        self.assertIsNone(elsewhere.sent_on)
+
+    def test_rained_out_weekend_credits_nobody(self):
+        _todo(self.me, self.peaks, 1)
+        self._post_log(outcome="rained_out")
+        self.assertEqual(Weekend.objects.get().outcome, "rained_out")
+        self.assertFalse(Credit.objects.exists())
+
+    def test_cannot_log_twice_without_undo(self):
+        _todo(self.me, self.peaks, 1)
+        self._post_log(area=self.peaks.pk)
+        self.assertEqual(self._post_log(area=self.peaks.pk).status_code, 400)
+        self.client.post(reverse("adventures:undo_log", args=[self.past.isoformat()]))
+        self.assertFalse(Credit.objects.exists())
+        self._post_log(outcome="rained_out")
+        self.assertEqual(Weekend.objects.get().outcome, "rained_out")
+
+    def test_log_requires_area_when_climbed(self):
+        self._post_log()
+        self.assertFalse(Weekend.objects.filter(outcome="climbed").exists())
+
+    def test_cannot_log_a_future_weekend(self):
+        future = selectors.weekend_saturdays(timezone.localdate())[-1] + timedelta(weeks=1)
+        response = self.client.get(reverse("adventures:log", args=[future.isoformat()]))
+        self.assertEqual(response.status_code, 400)
+
+    def test_log_todos_partial(self):
+        _todo(self.me, self.peaks, 1)
+        url = reverse("adventures:log_todos", args=[SATURDAY.isoformat()])
+        response = self.client.get(url, {"area": self.peaks.pk, "attendees": [self.me.pk]})
+        self.assertContains(response, "Worked")
+
+    def test_season_page(self):
+        _todo(self.me, self.peaks, 1)
+        self._post_log(area=self.peaks.pk)
+        response = self.client.get(reverse("adventures:season"))
+        self.assertContains(response, "owed 0.5")
+        self.assertContains(response, "ahead 0.5")
+
+    def test_add_todo_appends_and_move_reorders(self):
+        first = _todo(self.me, self.peaks, 1)
+        self.client.post(
+            reverse("adventures:todo_add", args=[self.me.pk]),
+            {"name": "New", "area": self.sedona.pk},
         )
-        with patch(FETCH_PATH, side_effect=OSError("offline")):
-            response = self.client.get(reverse("adventures:planner"))
-        self.assertContains(response, "onsight 5.10c")
+        new = ToDo.objects.get(name="New")
+        self.assertEqual(new.rank, 2)
+        self.client.post(reverse("adventures:todo_move", args=[new.pk, "up"]))
+        new.refresh_from_db()
+        first.refresh_from_db()
+        self.assertEqual((new.rank, first.rank), (1, 2))
+
+    def test_send_toggle_renumbers(self):
+        first = _todo(self.me, self.peaks, 1)
+        second = _todo(self.me, self.peaks, 2)
+        self.client.post(reverse("adventures:todo_send", args=[first.pk]))
+        second.refresh_from_db()
+        self.assertEqual(second.rank, 1)
+        self.client.post(reverse("adventures:todo_send", args=[first.pk]))
+        first.refresh_from_db()
+        self.assertEqual((first.sent_on, first.rank), (None, 2))
 
     def test_tick_import_replaces_previous_and_shows_level(self):
-        Tick.objects.create(owner=self.user, date=SATURDAY, route="Old", rating="5.8")
+        Tick.objects.create(climber=self.you, date=SATURDAY, route="Old", rating="5.8")
         upload = SimpleUploadedFile("ticks.csv", TICK_CSV.encode(), content_type="text/csv")
-        self.client.post(reverse("adventures:ticks"), {"file": upload})
+        self.client.post(reverse("adventures:climber", args=[self.you.pk]), {"file": upload})
         self.assertEqual(
-            sorted(Tick.objects.values_list("route", flat=True)), ["Boulder", "Crack", "Slab"]
+            sorted(self.you.ticks.values_list("route", flat=True)), ["Boulder", "Crack", "Slab"]
         )
-        response = self.client.get(reverse("adventures:ticks"))
-        self.assertContains(response, "5.10c onsight")
 
     def test_tick_import_rejects_non_export(self):
         upload = SimpleUploadedFile("x.csv", b"foo,bar\n1,2\n", content_type="text/csv")
-        response = self.client.post(reverse("adventures:ticks"), {"file": upload})
+        response = self.client.post(
+            reverse("adventures:climber", args=[self.me.pk]), {"file": upload}
+        )
         self.assertContains(response, "Expected a Mountain Project tick export")
 
+    def test_climber_pages_render(self):
+        _todo(self.me, self.peaks, 1)
+        self.assertContains(self.client.get(reverse("adventures:climbers")), "Me")
+        self.assertContains(
+            self.client.get(reverse("adventures:climber", args=[self.me.pk])), "#1"
+        )
+
+    def test_add_climber_without_login(self):
+        self.client.post(reverse("adventures:climber_add"), {"name": "Friend", "is_active": "on"})
+        self.assertIsNone(Climber.objects.get(name="Friend").user)
+
     def test_refresh_route_counts(self):
-        response_data = {"a0": {"aggregate": {"byGrade": [{"label": "5.10", "count": 7}]}}}
-        with patch(OPENBETA_QUERY_PATH, return_value=response_data):
+        data = {"a0": {"aggregate": {"byGrade": [{"label": "5.10", "count": 7}]}}}
+        with patch(OPENBETA_QUERY_PATH, return_value=data):
             self.client.post(reverse("adventures:refresh_routes"))
         self.assertEqual(Area.objects.get(name="Sedona").grade_counts, {"5.10": 7})
-        self.assertIsNone(Area.objects.get(name="Arizona Snowbowl").grade_counts_updated_at)
 
     def test_refresh_route_counts_survives_openbeta_outage(self):
         with patch(OPENBETA_QUERY_PATH, side_effect=OSError("down")):
             response = self.client.post(reverse("adventures:refresh_routes"), follow=True)
         self.assertContains(response, "Couldn&#x27;t reach OpenBeta")
 
-    def test_openbeta_search(self):
-        data = {
-            "areas": [
-                {
-                    "uuid": "u",
-                    "area_name": "Indian Creek",
-                    "pathTokens": ["USA", "Utah", "Indian Creek"],
-                    "totalClimbs": 1502,
-                }
-            ]
-        }
-        with patch(OPENBETA_QUERY_PATH, return_value=data):
-            response = self.client.get(reverse("adventures:openbeta_search"), {"q": "indian"})
-        self.assertContains(response, "1502 climbs")
-
     def test_area_form_rejects_bad_openbeta_id(self):
         response = self.client.post(
             reverse("adventures:area_add"),
-            {
-                "name": "X",
-                "latitude": "1",
-                "longitude": "2",
-                "activities": ["climbing"],
-                "openbeta_uuids": "not-a-uuid",
-            },
+            {"name": "X", "latitude": "1", "longitude": "2", "openbeta_uuids": "not-a-uuid"},
         )
         self.assertContains(response, "Not an OpenBeta area id")
 
-    def test_add_goal_and_toggle(self):
-        self.client.post(
-            reverse("adventures:goal_add"),
-            {"name": "Line", "area": self.area.pk, "activity": "climbing", "owner": self.user.pk},
-        )
-        goal = Goal.objects.get(name="Line")
-        self.client.post(reverse("adventures:goal_toggle", args=[goal.pk]))
-        goal.refresh_from_db()
-        self.assertTrue(goal.is_done)
+    def test_delete_todo_renumbers(self):
+        first = _todo(self.me, self.peaks, 1)
+        second = _todo(self.me, self.peaks, 2)
+        self.client.post(reverse("adventures:delete", args=["todo", first.pk]))
+        second.refresh_from_db()
+        self.assertEqual(second.rank, 1)
 
-    def test_trip_end_before_start_is_rejected(self):
-        response = self.client.post(
-            reverse("adventures:trip_add"),
-            {
-                "title": "Backwards",
-                "area": self.area.pk,
-                "activity": "climbing",
-                "start_date": "2026-11-08",
-                "end_date": "2026-11-07",
-            },
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(Trip.objects.exists())
 
-    def test_area_form_saves_activities(self):
-        self.client.post(
-            reverse("adventures:area_add"),
-            {"name": "New", "latitude": "1.5", "longitude": "2.5", "activities": ["ice"]},
-        )
-        self.assertEqual(Area.objects.get(name="New").activities, ["ice"])
+class GroupMigrationTests(TransactionTestCase):
+    """0003/0004 carry v0.7.0's per-user goals and ticks over to climber profiles."""
 
-    def test_delete_trip(self):
-        trip = Trip.objects.create(
-            title="T", area=self.area, start_date=SATURDAY, end_date=SATURDAY
+    before = [("adventures", "0002_seed_areas")]
+    after = [("adventures", "0004_drop_non_climbing")]
+
+    def test_goals_and_ticks_become_climber_data(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.before)
+        old = executor.loader.project_state(self.before).apps
+        user = old.get_model("auth", "User").objects.create(username="pat", first_name="Pat")
+        # Rolling back recreates `activities` empty; restore what 0002 seeded.
+        OldArea = old.get_model("adventures", "Area")
+        OldArea.objects.update(activities=["climbing"])
+        OldArea.objects.filter(name="Arizona Snowbowl").update(activities=["skiing"])
+        area = OldArea.objects.get(name="Sedona")
+        Goal = old.get_model("adventures", "Goal")
+        Goal.objects.create(owner_id=user.pk, name="Done one", area=area, is_done=True)
+        Goal.objects.create(owner_id=user.pk, name="Open one", area=area)
+        Goal.objects.create(owner_id=user.pk, name="Ski", area=area, activity="skiing")
+        old.get_model("adventures", "Tick").objects.create(
+            owner_id=user.pk, date=SATURDAY, route="R"
         )
-        self.client.post(reverse("adventures:delete", args=["trip", trip.pk]))
-        self.assertFalse(Trip.objects.exists())
+        old.get_model("adventures", "Weekend").objects.create(saturday=SATURDAY, focus="rest")
+
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(self.after)
+        new = executor.loader.project_state(self.after).apps
+        climber = new.get_model("adventures", "Climber").objects.get()
+        self.assertEqual((climber.name, climber.user_id), ("Pat", user.pk))
+        todos = new.get_model("adventures", "ToDo").objects.order_by("rank")
+        self.assertEqual(
+            [(t.name, t.rank, t.sent_on is not None) for t in todos],
+            [("Open one", 1, False), ("Done one", 2, True)],
+        )
+        self.assertEqual(new.get_model("adventures", "Tick").objects.get().climber_id, climber.pk)
+        self.assertEqual(new.get_model("adventures", "Weekend").objects.get().focus, "")
+        names = set(new.get_model("adventures", "Area").objects.values_list("name", flat=True))
+        self.assertNotIn("Arizona Snowbowl", names)
+        self.assertIn("Sedona", names)

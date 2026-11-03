@@ -11,9 +11,12 @@
 
 {% if not has_areas %}
 <div class="empty-state">
-    <div><a class="btn btn-primary" href="{% url 'adventures:area_add' %}">+ Add an area</a></div>
+    <div><a class="btn btn-primary" href="{% url 'adventures:area_add' %}">+ Add a crag</a></div>
 </div>
 {% else %}
+    {% if not has_climbers %}
+    <div class="focus-note">Add the group on <a href="{% url 'adventures:climbers' %}">Climbers</a>, with each person's ranked to-do list, and crags will be ranked by who they serve.</div>
+    {% endif %}
     {% for weekend in weekends %}
         {% include "adventures/partials/weekend.html" %}
     {% endfor %}
@@ -26,7 +29,7 @@
             <li>
                 <div>
                     <a href="{% url 'adventures:trip_edit' trip.pk %}">{{ trip.title }}</a>
-                    <div class="option-reasons">{{ trip.get_activity_display }} · {{ trip.area.name }} · {{ trip.start_date|date:"M j" }} · {{ trip.start_date|timeuntil }} away</div>
+                    <div class="option-reasons">{{ trip.area.name }} · {{ trip.start_date|date:"M j" }} · {{ trip.start_date|timeuntil }} away</div>
                 </div>
             </li>
             {% endfor %}
