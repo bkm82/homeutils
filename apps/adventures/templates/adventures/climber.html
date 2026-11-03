@@ -37,7 +37,7 @@
     <li>
         <div>
             <span class="rank">#{{ todo.rank }}</span>
-            <a href="{% url 'adventures:todo_edit' todo.pk %}">{{ todo.name }}</a>{% if todo.grade %} <span class="grade">{{ todo.grade }}</span>{% endif %}
+            <a href="{% url 'adventures:todo_edit' todo.pk %}">{{ todo.name }}</a>{% if todo.openbeta_url %} <a class="zone-label" href="{{ todo.openbeta_url }}" rel="noopener" target="_blank">OpenBeta</a>{% endif %}{% if todo.grade %} <span class="grade">{{ todo.grade }}</span>{% endif %}
             <div class="option-reasons">{{ todo.crag }}{% if todo.is_project %} · project{% endif %}{% if todo.sessions %} · {{ todo.sessions }} session{{ todo.sessions|pluralize }}{% endif %} · weight {{ weight|floatformat:2 }}</div>
         </div>
         <div class="card-actions">

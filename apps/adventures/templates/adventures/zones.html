@@ -18,7 +18,7 @@
 <section class="zone">
     <div class="plan-head">
         <h3><a href="{% url 'adventures:zone_edit' zone.pk %}">{{ zone.name }}</a></h3>
-        <span class="option-reasons">{% if zone.is_local %}Local{% else %}Trip{% endif %}{% if zone.notes %} · {{ zone.notes }}{% endif %}</span>
+        <span class="option-reasons">{% if zone.is_local %}Local{% else %}Trip{% endif %}{% if zone.openbeta_uuids %} · on OpenBeta{% endif %}{% if zone.notes %} · {{ zone.notes }}{% endif %}</span>
         <a class="btn-ghost" href="{% url 'adventures:crag_add' %}?zone={{ zone.pk }}">+ Crag</a>
     </div>
     {% if zone.crags.all %}

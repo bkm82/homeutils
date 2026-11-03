@@ -6,6 +6,7 @@
 <div class="page-head">
     <h1>{% if is_new %}New {{ noun }}{% else %}Edit {{ noun }}{% endif %}</h1>
 </div>
+{% block before_form %}{% endblock %}
 <form class="med-form" method="post">
     {% csrf_token %}
     {{ form.non_field_errors }}

@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 # How far back the season page offers unlogged weekends for logging.
 LOG_BACK_WEEKS = 8
+# How long a zone's OpenBeta climb list is reused before refetching.
+CLIMB_INDEX_TTL = timedelta(days=30)
 
 
 def _saturday(value: str) -> date:
@@ -377,6 +379,20 @@ def todo_add(request: HttpRequest, climber_pk: int) -> HttpResponse:
         todo.climber = climber
         todo.rank = (climber.todos.aggregate(Max("rank"))["rank__max"] or 0) + 1
 
+    if request.method == "GET":
+        zone_id = request.GET.get("zone")
+        return render(
+            request,
+            "adventures/todo_form.html",
+            {
+                "form": ToDoForm(),
+                "noun": f"to-do for {climber}",
+                "is_new": True,
+                "climber": climber,
+                "zones": Zone.objects.exclude(openbeta_uuids=[]),
+                "selected_zone": int(zone_id) if zone_id and zone_id.isdigit() else None,
+            },
+        )
     return _edit(
         request,
         ToDoForm,
@@ -385,6 +401,123 @@ def todo_add(request: HttpRequest, climber_pk: int) -> HttpResponse:
         success_url=reverse("adventures:climber", args=[climber_pk]),
         on_create=append,
     )
+
+
+def _climb_index(zone: Zone) -> list[dict]:
+    """The zone's searchable climb list, refetched from OpenBeta when stale or relinked."""
+    key = ",".join(str(uuid) for uuid in zone.openbeta_uuids)
+    fresh = zone.climb_index_updated_at and (
+        timezone.now() - zone.climb_index_updated_at < CLIMB_INDEX_TTL
+    )
+    if zone.climb_index_key != key or not fresh:
+        zone.climb_index = [
+            c for uuid in zone.openbeta_uuids for c in openbeta.region_climbs(uuid)
+        ]
+        zone.climb_index_key = key
+        zone.climb_index_updated_at = timezone.now()
+        zone.save(update_fields=["climb_index", "climb_index_key", "climb_index_updated_at"])
+    return zone.climb_index
+
+
+@login_required
+def climb_search(request: HttpRequest, climber_pk: int) -> HttpResponse:
+    climber = get_object_or_404(Climber, pk=climber_pk)
+    zone = Zone.objects.filter(pk=request.GET.get("zone") or None).first()
+    query = request.GET.get("q", "").strip()
+    results, error = [], None
+    if zone and len(query) >= 3:
+        try:
+            results = openbeta.search_climbs(_climb_index(zone), query)
+        except (OSError, ValueError, KeyError) as exc:
+            logger.warning("OpenBeta climb index for %s failed: %s", zone, exc)
+            error = "OpenBeta didn't respond - try again."
+    on_list = set(climber.todos.exclude(openbeta_uuid="").values_list("openbeta_uuid", flat=True))
+    return render(
+        request,
+        "adventures/partials/climb_results.html",
+        {
+            "climber": climber,
+            "zone": zone,
+            "results": results,
+            "error": error,
+            "query": query,
+            "on_list": on_list,
+        },
+    )
+
+
+def _crag_for(zone: Zone, crag_uuid: str, name: str) -> Crag:
+    """The zone's crag for an OpenBeta sub-area: linked, same-named, or newly created."""
+    crags = list(zone.crags.all())
+    for crag in crags:
+        if crag_uuid in crag.openbeta_uuids:
+            return crag
+    for crag in crags:
+        if crag.name.casefold() == name.casefold():
+            crag.openbeta_uuids = [*crag.openbeta_uuids, crag_uuid]
+            crag.save(update_fields=["openbeta_uuids"])
+            return crag
+    return Crag.objects.create(
+        zone=zone, name=name, sandstone=zone.sandstone, openbeta_uuids=[crag_uuid]
+    )
+
+
+@login_required
+@require_POST
+def todo_from_openbeta(request: HttpRequest, climber_pk: int) -> HttpResponse:
+    climber = get_object_or_404(Climber, pk=climber_pk)
+    zone = get_object_or_404(Zone, pk=request.POST.get("zone"))
+    climb = next((c for c in zone.climb_index if c["uuid"] == request.POST.get("climb")), None)
+    if climb is None:
+        return HttpResponseBadRequest("Unknown climb - search again")
+    if climber.todos.filter(openbeta_uuid=climb["uuid"], sent_on__isnull=True).exists():
+        messages.info(request, f"{climb['name']} is already on {climber}'s list.")
+        return redirect("adventures:climber", pk=climber.pk)
+    crag = _crag_for(zone, climb["crag_uuid"], climb["crag"] or zone.name)
+    ToDo.objects.create(
+        climber=climber,
+        crag=crag,
+        name=climb["name"][:120],
+        grade=climb["grade"][:20],
+        openbeta_uuid=climb["uuid"],
+        rank=(climber.todos.aggregate(Max("rank"))["rank__max"] or 0) + 1,
+    )
+    messages.success(
+        request, f"Added {climb['name']} at {crag} - move it up the list if it's a priority."
+    )
+    return redirect("adventures:climber", pk=climber.pk)
+
+
+@login_required
+@require_POST
+def zone_from_openbeta(request: HttpRequest) -> HttpResponse:
+    """Use an OpenBeta area as a zone - an existing one if it's already linked."""
+    uuid = request.POST.get("uuid", "")
+    if not openbeta.is_uuid(uuid):
+        return HttpResponseBadRequest("Not an OpenBeta area id")
+    zone = next((z for z in Zone.objects.all() if uuid in z.openbeta_uuids), None)
+    if zone is None:
+        try:
+            area = openbeta.area_info(uuid)
+        except (OSError, ValueError, KeyError) as exc:
+            logger.warning("OpenBeta area %s failed: %s", uuid, exc)
+            messages.error(request, "OpenBeta didn't respond - try again.")
+            return redirect(request.POST.get("next") or "adventures:zones")
+        name = area["name"]
+        if Zone.objects.filter(name=name).exists():
+            name = f"{name} ({request.POST.get('path') or 'OpenBeta'})"[:120]
+        zone = Zone.objects.create(
+            name=name,
+            latitude=area["latitude"],
+            longitude=area["longitude"],
+            is_local=request.POST.get("is_local") == "on",
+            openbeta_uuids=[uuid],
+        )
+        messages.success(request, f"Added zone {zone}. Edit it to set local/sandstone.")
+    next_url = request.POST.get("next")
+    if next_url and next_url.startswith("/"):
+        return redirect(f"{next_url}?zone={zone.pk}")
+    return redirect("adventures:zones")
 
 
 @login_required
@@ -468,7 +601,14 @@ def zone_list(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def zone_add(request: HttpRequest) -> HttpResponse:
-    return _edit(request, ZoneForm, None, noun="zone", success_url="adventures:zones")
+    return _edit(
+        request,
+        ZoneForm,
+        None,
+        noun="zone",
+        success_url="adventures:zones",
+        template="adventures/openbeta_form.html",
+    )
 
 
 @login_required
@@ -481,6 +621,7 @@ def zone_edit(request: HttpRequest, pk: int) -> HttpResponse:
         noun="zone",
         success_url="adventures:zones",
         delete_url=reverse("adventures:delete", args=["zone", pk]),
+        template="adventures/openbeta_form.html",
     )
 
 
@@ -494,7 +635,7 @@ def crag_add(request: HttpRequest) -> HttpResponse:
         noun="crag",
         success_url="adventures:zones",
         initial={"zone": zone} if zone else None,
-        template="adventures/crag_form.html",
+        template="adventures/openbeta_form.html",
     )
 
 
@@ -508,7 +649,7 @@ def crag_edit(request: HttpRequest, pk: int) -> HttpResponse:
         noun="crag",
         success_url="adventures:zones",
         delete_url=reverse("adventures:delete", args=["crag", pk]),
-        template="adventures/crag_form.html",
+        template="adventures/openbeta_form.html",
     )
 
 
@@ -546,7 +687,14 @@ def openbeta_search(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "adventures/partials/openbeta_results.html",
-        {"results": results, "error": error, "query": query},
+        {
+            "results": results,
+            "error": error,
+            "query": query,
+            # "zone" mode offers each result as a new zone instead of an id to copy.
+            "as_zone": request.GET.get("mode") == "zone",
+            "next": request.GET.get("next", ""),
+        },
     )
 
 

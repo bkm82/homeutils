@@ -65,6 +65,11 @@ Picks where the group climbs each weekend, balancing everyone's to-do lists acro
   16-day [Open-Meteo](https://open-meteo.com/) forecast, and sandstone crags are ruled out for
   48h after rain (`apps/adventures/conditions.py`). A second day at the same crag counts at
   half, so plans spread sessions out unless one crag is clearly best.
+- **Adding to-dos from OpenBeta**: on "add to-do", pick a zone (or search any OpenBeta region,
+  which becomes a new zone), then search climbs by name. Picking one fills in its name and
+  grade and files it under the right crag, which is the region's sub-area the climb sits in,
+  e.g. Red Rocks › Juniper Canyon. The crag is created if needed. Each zone's climb list is
+  fetched from OpenBeta on first search and cached for 30 days.
 - **Climbers** are profiles with an optional link to a login. Each has a ranked to-do list
   (#1 is worth 1, #2 is worth ½, ...) and hand-entered onsight/redpoint grades. A Mountain
   Project tick import only *suggests* grades.

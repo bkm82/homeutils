@@ -136,6 +136,97 @@ class OpenBetaTests(TestCase):
         query.assert_not_called()
 
 
+RR = "bea6bf11-de53-5046-a5b4-b89217b7e9bc"
+JUNIPER = "3a44c556-7981-5855-8c45-d5eb8f7c5274"
+CLOUD_TOWER = "11111111-1111-1111-1111-111111111111"
+CRIMSON = "28e8f602-f986-546c-917c-4d3d6ac0a2b4"
+CLIMB_INDEX = [
+    {
+        "uuid": CRIMSON,
+        "name": "Crimson Chrysalis",
+        "grade": "5.8+",
+        "crag_uuid": JUNIPER,
+        "crag": "Juniper Canyon",
+        "path": "Juniper Canyon › Cloud Tower",
+    },
+    {
+        "uuid": "22222222-2222-2222-2222-222222222222",
+        "name": "Chrysalis Direct",
+        "grade": "5.10a",
+        "crag_uuid": JUNIPER,
+        "crag": "Juniper Canyon",
+        "path": "Juniper Canyon",
+    },
+]
+
+
+class ClimbSearchTests(TestCase):
+    def test_region_climbs_tags_each_climb_with_its_crag(self):
+        ancestors = ["usa", "nv", "snv", RR]
+        responses = [
+            {"area": {"ancestors": ancestors}},
+            {
+                "bulkAreas": [
+                    {
+                        "uuid": JUNIPER,
+                        "area_name": "Juniper Canyon",
+                        "ancestors": [*ancestors, JUNIPER],
+                        "climbs": [],
+                    },
+                    {
+                        "uuid": CLOUD_TOWER,
+                        "area_name": "Cloud Tower",
+                        "ancestors": [*ancestors, JUNIPER, CLOUD_TOWER],
+                        "climbs": [
+                            {
+                                "uuid": CRIMSON,
+                                "name": "Crimson Chrysalis",
+                                "grades": {"yds": "5.8+"},
+                            }
+                        ],
+                    },
+                    {
+                        "uuid": RR,
+                        "area_name": "Red Rocks",
+                        "ancestors": ancestors,
+                        "climbs": [
+                            {
+                                "uuid": "b",
+                                "name": "Boulder",
+                                "grades": {"yds": None, "vscale": "V3"},
+                            }
+                        ],
+                    },
+                ]
+            },
+        ]
+        with patch(OPENBETA_QUERY_PATH, side_effect=responses):
+            climbs = openbeta.region_climbs(RR)
+        self.assertEqual(
+            [(c["name"], c["grade"], c["crag"], c["path"]) for c in climbs],
+            [
+                ("Crimson Chrysalis", "5.8+", "Juniper Canyon", "Juniper Canyon › Cloud Tower"),
+                ("Boulder", "V3", "Red Rocks", ""),
+            ],
+        )
+        self.assertEqual(climbs[1]["crag_uuid"], RR)
+
+    def test_region_climbs_pages_through_bulk_areas(self):
+        page = [
+            {"uuid": f"a{i}", "area_name": "A", "ancestors": [RR], "climbs": []}
+            for i in range(openbeta.BULK_PAGE)
+        ]
+        responses = [{"area": {"ancestors": [RR]}}, {"bulkAreas": page}, {"bulkAreas": page[:3]}]
+        with patch(OPENBETA_QUERY_PATH, side_effect=responses) as query:
+            openbeta.region_climbs(RR)
+        self.assertEqual(query.call_args.args[1]["offset"], openbeta.BULK_PAGE)
+
+    def test_search_prefers_prefix_matches(self):
+        names = [c["name"] for c in openbeta.search_climbs(CLIMB_INDEX, "chrysalis")]
+        self.assertEqual(names, ["Chrysalis Direct", "Crimson Chrysalis"])
+        self.assertEqual(openbeta.search_climbs(CLIMB_INDEX, "  "), [])
+
+
 class ConditionsTests(TestCase):
     def test_dry_mild_day_is_go(self):
         self.assertEqual(conditions.rate(_day(SATURDAY), []).verdict, "go")
@@ -605,6 +696,103 @@ class ViewTests(TestCase):
             response = self.client.post(reverse("adventures:refresh_routes"), follow=True)
         self.assertContains(response, "Couldn&#x27;t reach OpenBeta")
 
+    def _openbeta_zone(self):
+        return Zone.objects.create(
+            name="Red Rocks", latitude=36, longitude=-115, sandstone=True, openbeta_uuids=[RR]
+        )
+
+    def test_climb_search_builds_and_reuses_the_zone_index(self):
+        zone = self._openbeta_zone()
+        url = reverse("adventures:climb_search", args=[self.me.pk])
+        with patch("apps.adventures.openbeta.region_climbs", return_value=CLIMB_INDEX) as fetch:
+            response = self.client.get(url, {"zone": zone.pk, "q": "crimson"})
+            self.client.get(url, {"zone": zone.pk, "q": "direct"})
+        self.assertContains(response, "Crimson Chrysalis")
+        self.assertContains(response, "Red Rocks › Juniper Canyon › Cloud Tower")
+        self.assertEqual(fetch.call_count, 1)
+
+    def test_climb_search_survives_openbeta_outage(self):
+        zone = self._openbeta_zone()
+        with patch("apps.adventures.openbeta.region_climbs", side_effect=OSError("down")):
+            response = self.client.get(
+                reverse("adventures:climb_search", args=[self.me.pk]),
+                {"zone": zone.pk, "q": "crimson"},
+            )
+        self.assertContains(response, "OpenBeta didn")
+
+    def test_adding_a_climb_files_it_under_an_auto_created_crag(self):
+        zone = self._openbeta_zone()
+        zone.climb_index = CLIMB_INDEX
+        zone.save()
+        url = reverse("adventures:todo_from_openbeta", args=[self.me.pk])
+        self.client.post(url, {"zone": zone.pk, "climb": CRIMSON})
+        todo = ToDo.objects.get()
+        self.assertEqual(
+            (todo.name, todo.grade, todo.openbeta_uuid), ("Crimson Chrysalis", "5.8+", CRIMSON)
+        )
+        self.assertEqual(
+            (todo.crag.zone, todo.crag.name, todo.crag.sandstone), (zone, "Juniper Canyon", True)
+        )
+        self.assertEqual(todo.crag.openbeta_uuids, [JUNIPER])
+
+        # A second climb there reuses the crag; the same climb isn't added twice.
+        self.client.post(url, {"zone": zone.pk, "climb": CLIMB_INDEX[1]["uuid"]})
+        self.client.post(url, {"zone": zone.pk, "climb": CRIMSON})
+        self.assertEqual(ToDo.objects.count(), 2)
+        self.assertEqual(zone.crags.count(), 1)
+
+    def test_adding_a_climb_links_a_same_named_crag(self):
+        zone = self._openbeta_zone()
+        zone.climb_index = CLIMB_INDEX
+        zone.save()
+        existing = _crag(zone, "juniper canyon")
+        self.client.post(
+            reverse("adventures:todo_from_openbeta", args=[self.me.pk]),
+            {"zone": zone.pk, "climb": CRIMSON},
+        )
+        existing.refresh_from_db()
+        self.assertEqual(ToDo.objects.get().crag, existing)
+        self.assertEqual(existing.openbeta_uuids, [JUNIPER])
+
+    def test_unknown_climb_is_rejected(self):
+        zone = self._openbeta_zone()
+        response = self.client.post(
+            reverse("adventures:todo_from_openbeta", args=[self.me.pk]),
+            {"zone": zone.pk, "climb": CRIMSON},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_zone_from_openbeta_creates_or_reuses(self):
+        Zone.objects.update(openbeta_uuids=[])  # the seeded Red Rock zone is linked to RR
+        info = {"uuid": RR, "name": "Red Rocks", "latitude": 36.1, "longitude": -115.4}
+        url = reverse("adventures:zone_from_openbeta")
+        next_url = reverse("adventures:todo_add", args=[self.me.pk])
+        with patch("apps.adventures.openbeta.area_info", return_value=info):
+            response = self.client.post(url, {"uuid": RR, "next": next_url})
+        zone = Zone.objects.get(openbeta_uuids=[RR])
+        self.assertEqual((zone.name, zone.latitude, zone.is_local), ("Red Rocks", 36.1, False))
+        self.assertRedirects(response, f"{next_url}?zone={zone.pk}", fetch_redirect_response=False)
+        with patch("apps.adventures.openbeta.area_info") as info_call:
+            self.client.post(url, {"uuid": RR})
+        info_call.assert_not_called()
+        self.assertEqual(Zone.objects.filter(openbeta_uuids=[RR]).count(), 1)
+
+    def test_zone_from_openbeta_avoids_name_clashes(self):
+        Zone.objects.update(openbeta_uuids=[])
+        info = {"uuid": RR, "name": "Sedona", "latitude": 1, "longitude": 2}
+        with patch("apps.adventures.openbeta.area_info", return_value=info):
+            self.client.post(
+                reverse("adventures:zone_from_openbeta"), {"uuid": RR, "path": "Somewhere"}
+            )
+        self.assertTrue(Zone.objects.filter(name="Sedona (Somewhere)").exists())
+
+    def test_todo_add_page_offers_openbeta_zones(self):
+        zone = self._openbeta_zone()
+        response = self.client.get(
+            reverse("adventures:todo_add", args=[self.me.pk]), {"zone": zone.pk}
+        )
+        self.assertContains(response, f'<option value="{zone.pk}" selected>Red Rocks</option>')
+
     def test_crag_form_rejects_bad_openbeta_id(self):
         response = self.client.post(
             reverse("adventures:crag_add"),
@@ -743,3 +931,22 @@ class ZoneMigrationTests(MigrationTestCase):
         )
         weekend = new.get_model("adventures", "Weekend").objects.get()
         self.assertEqual((weekend.saturday_crag_id, weekend.sunday_crag_id), (crag.pk, crag.pk))
+
+
+class ZoneLinkMigrationTests(MigrationTestCase):
+    """0008 copies each placeholder crag's OpenBeta links and rock type up to its zone."""
+
+    before = [("adventures", "0007_drop_area_fields")]
+    after = [("adventures", "0008_openbeta_climbs")]
+
+    def test_zone_inherits_placeholder_crag_links(self):
+        old = self.old_apps()
+        Zone_ = old.get_model("adventures", "Zone")
+        Crag_ = old.get_model("adventures", "Crag")
+        zone = Zone_.objects.create(name="Red Rock", latitude=0, longitude=0)
+        Crag_.objects.create(zone=zone, name="Red Rock", sandstone=True, openbeta_uuids=[RR])
+        Crag_.objects.create(zone=zone, name="Calico", openbeta_uuids=[JUNIPER])
+
+        new = self.migrate_to_after()
+        zone = new.get_model("adventures", "Zone").objects.get()
+        self.assertEqual((zone.openbeta_uuids, zone.sandstone), ([RR], True))

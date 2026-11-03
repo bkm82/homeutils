@@ -8,7 +8,18 @@
             {{ area.name }} <span class="grade">{{ area.total }} climbs</span>
             <div class="option-reasons">{{ area.path }}</div>
         </div>
+        {% if as_zone %}
+        <form class="log-checks" method="post" action="{% url 'adventures:zone_from_openbeta' %}">
+            {% csrf_token %}
+            <input type="hidden" name="uuid" value="{{ area.uuid }}">
+            <input type="hidden" name="path" value="{{ area.path }}">
+            <input type="hidden" name="next" value="{{ next }}">
+            <label class="field-label-inline"><input type="checkbox" name="is_local"> Local</label>
+            <button class="btn" type="submit">Add as zone</button>
+        </form>
+        {% else %}
         <button class="btn" type="button" onclick="addOpenBetaArea('{{ area.uuid }}')">Add</button>
+        {% endif %}
     </li>
     {% endfor %}
 </ul>
