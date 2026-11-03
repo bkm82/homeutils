@@ -1,0 +1,9 @@
+{% with name=request.resolver_match.url_name %}
+<div class="subnav">
+    <a class="nav-link{% if name == 'planner' %} active{% endif %}" href="{% url 'adventures:planner' %}">Planner</a>
+    <a class="nav-link{% if name == 'goals' %} active{% endif %}" href="{% url 'adventures:goals' %}">Goals</a>
+    <a class="nav-link{% if name == 'trips' %} active{% endif %}" href="{% url 'adventures:trips' %}">Trips</a>
+    <a class="nav-link{% if name == 'ticks' %} active{% endif %}" href="{% url 'adventures:ticks' %}">Ticks</a>
+    <a class="nav-link{% if name == 'areas' %} active{% endif %}" href="{% url 'adventures:areas' %}">Areas</a>
+</div>
+{% endwith %}

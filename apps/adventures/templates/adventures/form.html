@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}{% if is_new %}New {{ noun }}{% else %}Edit {{ noun }}{% endif %} · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>{% if is_new %}New {{ noun }}{% else %}Edit {{ noun }}{% endif %}</h1>
+</div>
+<form class="med-form" method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for field in form %}
+        {% if field.widget_type == "checkbox" %}
+        <label class="field-label-inline">{{ field }} {{ field.label }}</label>
+        {% else %}
+        <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% endif %}
+        {% if field.help_text %}<small class="field-help">{{ field.help_text }}</small>{% endif %}
+        {{ field.errors }}
+    {% endfor %}
+    <button class="btn btn-primary" type="submit">Save</button>
+</form>
+{% block after_form %}{% endblock %}
+{% if delete_url %}
+<form method="post" action="{{ delete_url }}" style="margin-top: 1.5rem;"
+      onsubmit="return confirm('Delete this {{ noun }}?{% if noun == "area" %} Its goals and trips go with it.{% endif %}');">
+    {% csrf_token %}
+    <button class="btn" type="submit">Delete {{ noun }}</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Ticks · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Adventures</h1>
+</div>
+{% include "adventures/partials/subnav.html" %}
+
+<dl class="config-summary level-summary">
+    {% for person, level in levels %}
+    <div>
+        <dt>{{ person.get_full_name|default:person.get_username }}</dt>
+        <dd>{{ level.onsight_label|default:"—" }} onsight · {{ level.redpoint_label|default:"—" }} redpoint</dd>
+    </div>
+    {% endfor %}
+</dl>
+<p class="footnote">Average of the 3 hardest clean leads in the last {{ window_days }} days. Onsight counts onsights and flashes; redpoint adds redpoints and pinkpoints.</p>
+
+<form class="med-form" method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label class="field-label" for="{{ form.file.id_for_label }}">{{ form.file.label }}</label>
+    {{ form.file }}
+    {{ form.file.errors }}
+    <small class="field-help">On Mountain Project: your profile → Ticks → Export CSV. Importing replaces your previous import.</small>
+    <button class="btn btn-primary" type="submit">Import my ticks</button>
+</form>
+
+{% if recent %}
+<div class="page-head" style="margin-top: 2rem;"><h2>Your recent ticks</h2></div>
+<ul class="item-list">
+    {% for tick in recent %}
+    <li>
+        <div>
+            {% if tick.url %}<a href="{{ tick.url }}" rel="noopener">{{ tick.route }}</a>{% else %}{{ tick.route }}{% endif %}
+            <span class="grade">{{ tick.rating }}</span>
+            <div class="option-reasons">{{ tick.date|date:"M j, Y" }}{% if tick.lead_style %} · {{ tick.lead_style }}{% elif tick.style %} · {{ tick.style }}{% endif %}{% if tick.location %} · {{ tick.location }}{% endif %}</div>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

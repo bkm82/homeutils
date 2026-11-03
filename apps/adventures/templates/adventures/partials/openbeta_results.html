@@ -1,0 +1,17 @@
+{% if error %}
+<p class="option-reasons">{{ error }}</p>
+{% elif results %}
+<ul class="item-list">
+    {% for area in results %}
+    <li>
+        <div>
+            {{ area.name }} <span class="grade">{{ area.total }} climbs</span>
+            <div class="option-reasons">{{ area.path }}</div>
+        </div>
+        <button class="btn" type="button" onclick="addOpenBetaArea('{{ area.uuid }}')">Add</button>
+    </li>
+    {% endfor %}
+</ul>
+{% elif query|length >= 3 %}
+<p class="option-reasons">No OpenBeta areas match “{{ query }}”.</p>
+{% endif %}

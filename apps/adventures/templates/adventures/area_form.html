@@ -1,0 +1,22 @@
+{% extends "adventures/form.html" %}
+
+{% block after_form %}
+<div class="openbeta-search">
+    <label class="field-label" for="openbeta-q">Find OpenBeta areas</label>
+    <input id="openbeta-q" type="search" name="q" placeholder="e.g. Indian Creek"
+           hx-get="{% url 'adventures:openbeta_search' %}"
+           hx-trigger="input changed delay:600ms, search"
+           hx-target="#openbeta-results"
+           hx-indicator="#openbeta-loading">
+    <span id="openbeta-loading" class="htmx-indicator option-reasons">Searching OpenBeta…</span>
+    <div id="openbeta-results"></div>
+</div>
+<script>
+    function addOpenBetaArea(uuid) {
+        const input = document.getElementById("id_openbeta_uuids");
+        const ids = input.value.split(/[\s,]+/).filter(Boolean);
+        if (!ids.includes(uuid)) ids.push(uuid);
+        input.value = ids.join(", ");
+    }
+</script>
+{% endblock %}

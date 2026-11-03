@@ -1,0 +1,21 @@
+<li class="option verdict-{{ option.verdict }}">
+    <div class="option-main">
+        <span class="verdict-dot" aria-label="{{ option.verdict }}"></span>
+        <div>
+            <div class="option-title">{{ option.activity_label }} · {{ option.area.name }}</div>
+            {% if option.reasons %}<div class="option-reasons">{{ option.reasons|join:" · " }}</div>{% endif %}
+            {% if option.volume_count is not None %}<div class="volume-count">{{ option.volume_count }} route{{ option.volume_count|pluralize }} in the volume range</div>{% endif %}
+            {% if option.goals %}
+            <ul class="goal-tags">
+                {% for goal in option.goals %}
+                <li class="goal-tag{% if goal in option.priority_goals %} priority{% endif %}">
+                    {{ goal.name }}{% if goal.grade %} {{ goal.grade }}{% endif %}
+                    <span>· {{ goal.owner.get_full_name|default:goal.owner.get_username }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+    </div>
+    {% include "adventures/partials/days.html" with days=option.days %}
+</li>

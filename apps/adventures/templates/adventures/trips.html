@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Trips · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Adventures</h1>
+    <a class="btn btn-primary" href="{% url 'adventures:trip_add' %}">+ Trip</a>
+</div>
+{% include "adventures/partials/subnav.html" %}
+
+{% if upcoming or past %}
+<ul class="item-list">
+    {% for trip in upcoming %}
+    <li>
+        <div>
+            <a href="{% url 'adventures:trip_edit' trip.pk %}">{{ trip.title }}</a>
+            <div class="option-reasons">{{ trip.get_activity_display }} · {{ trip.area.name }} · {{ trip.start_date|date:"M j" }}–{{ trip.end_date|date:"M j" }}{% if trip.with_whom %} · with {{ trip.with_whom }}{% endif %}</div>
+        </div>
+    </li>
+    {% endfor %}
+    {% for trip in past %}
+    <li class="done">
+        <div>
+            <a href="{% url 'adventures:trip_edit' trip.pk %}">{{ trip.title }}</a>
+            <div class="option-reasons">{{ trip.area.name }} · {{ trip.start_date|date:"M j, Y" }}</div>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="empty-state"><div><a class="btn btn-primary" href="{% url 'adventures:trip_add' %}">+ Lock in a trip</a></div></div>
+{% endif %}
+{% endblock %}

@@ -52,6 +52,25 @@ Setup, per user:
 `DJANGO_TIME_ZONE` determines both the reminder-time comparison and the app's day boundary for
 streaks/heatmaps - defaults to `America/Phoenix`; override it in `.env` if deploying elsewhere.
 
+## Adventures (weekend planner)
+
+Ranks every area × activity (climbing, skiing, ice, hiking) for each weekend in the 16-day
+[Open-Meteo](https://open-meteo.com/) forecast, as go / marginal / no, with the reasons. The
+rules live in `apps/adventures/conditions.py`; for example, sandstone areas are ruled out for
+climbing for 48h after rain. Areas, goals, trips and weekend settings are shared by every user
+(household-wide). Forecasts are cached for 3 hours, so no API key or scheduler is needed.
+
+- **Whose weekend**: that person's goals move up among options the weather allows.
+- **Focus** (set from the coach's input): *Volume* ranks crags by the number of routes within
+  three letter grades under the climber's onsight level. *Try hard* puts crags with their open
+  goals first. *Rest* puts hiking and skiing first. Weather always outranks focus.
+- **Ticks**: each user uploads their Mountain Project tick export (profile → Ticks → Export
+  CSV). Onsight and redpoint levels are the average of their 3 hardest clean leads in the
+  last 120 days.
+- **Route counts** come from [OpenBeta](https://openbeta.io). Link areas on the area form,
+  then use Areas → "Refresh route counts". OpenBeta is never called while the planner page
+  renders.
+
 ## Adding a new utility app
 
 ```sh

@@ -45,7 +45,11 @@ exclude = ["**/migrations/**"]
 # exist, or that request.user/.htmx are added by middleware. Without this,
 # every ordinary Django model/request access is a false positive. The same
 # gap also shows up as unsupported-operator, e.g. max()/arithmetic mixing a
-# raw field descriptor type into a union with the real value type.
+# raw field descriptor type into a union with the real value type, and as
+# invalid-argument-type/not-iterable when a field value is passed to a typed
+# function or looped over.
 unresolved-attribute = "ignore"
 invalid-return-type = "ignore"
 unsupported-operator = "ignore"
+invalid-argument-type = "ignore"
+not-iterable = "ignore"
