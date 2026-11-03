@@ -4,7 +4,7 @@
     {% for todo in todos %}
     <li>
         <div>
-            {{ todo.climber.name }}: #{{ todo.rank }} {{ todo.name }}{% if todo.grade %} <span class="grade">{{ todo.grade }}</span>{% endif %}
+            {{ todo.climber.name }}: #{{ todo.rank }} {{ todo.name }} <span class="zone-label">{{ todo.crag }}</span>{% if todo.grade %} <span class="grade">{{ todo.grade }}</span>{% endif %}
             <div class="option-reasons">{{ todo.sessions }} session{{ todo.sessions|pluralize }} so far</div>
         </div>
         <div class="log-checks">

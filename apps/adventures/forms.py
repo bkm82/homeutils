@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 
 from . import grades, openbeta
-from .models import Area, Climber, ToDo, Trip
+from .models import Climber, Crag, ToDo, Trip, Zone
 
 
 class PersonChoiceField(forms.ModelChoiceField):
@@ -24,7 +24,18 @@ class UUIDListField(forms.CharField):
         return list(dict.fromkeys(uuids))
 
 
-class AreaForm(forms.ModelForm):
+class ZoneForm(forms.ModelForm):
+    class Meta:
+        model = Zone
+        fields = ["name", "latitude", "longitude", "is_local", "notes"]
+        widgets = {
+            "latitude": forms.NumberInput(attrs={"step": "any"}),
+            "longitude": forms.NumberInput(attrs={"step": "any"}),
+        }
+        help_texts = {"latitude": "The zone's forecast point - its crags share it."}
+
+
+class CragForm(forms.ModelForm):
     openbeta_uuids = UUIDListField(
         required=False,
         label="OpenBeta areas",
@@ -34,19 +45,8 @@ class AreaForm(forms.ModelForm):
     )
 
     class Meta:
-        model = Area
-        fields = [
-            "name",
-            "latitude",
-            "longitude",
-            "sandstone",
-            "notes",
-            "openbeta_uuids",
-        ]
-        widgets = {
-            "latitude": forms.NumberInput(attrs={"step": "any"}),
-            "longitude": forms.NumberInput(attrs={"step": "any"}),
-        }
+        model = Crag
+        fields = ["zone", "name", "sandstone", "notes", "openbeta_uuids"]
 
 
 class ClimberForm(forms.ModelForm):
@@ -90,17 +90,21 @@ class ClimberForm(forms.ModelForm):
 class ToDoForm(forms.ModelForm):
     class Meta:
         model = ToDo
-        fields = ["name", "area", "grade", "is_project", "notes"]
+        fields = ["name", "crag", "grade", "is_project", "notes"]
         widgets = {
             "name": forms.TextInput(attrs={"placeholder": "e.g. Pine Tree Arete"}),
             "grade": forms.TextInput(attrs={"placeholder": "e.g. 5.11a"}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["crag"].queryset = Crag.objects.select_related("zone")
+
 
 class TripForm(forms.ModelForm):
     class Meta:
         model = Trip
-        fields = ["title", "area", "start_date", "end_date", "with_whom", "notes"]
+        fields = ["title", "zone", "start_date", "end_date", "with_whom", "notes"]
         widgets = {
             "title": forms.TextInput(attrs={"placeholder": "e.g. Moab with the crew"}),
             "start_date": forms.DateInput(attrs={"type": "date"}),

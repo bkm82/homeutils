@@ -1042,3 +1042,35 @@ h1, h2, h3 {
   border: 1px solid var(--cyan);
   font-size: 0.85rem;
 }
+
+.plan {
+  margin-bottom: 0.9rem;
+}
+
+.plan-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.plan-head h3 {
+  font-size: 1rem;
+}
+
+.day-label {
+  min-width: 2.2rem;
+  color: var(--accent-bright);
+  font-size: 0.85rem;
+}
+
+.zone-label {
+  color: var(--fg-dim);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+}
+
+.zone {
+  margin-bottom: 1.75rem;
+}

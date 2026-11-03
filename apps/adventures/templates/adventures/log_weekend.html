@@ -10,7 +10,7 @@
 
 {% if weekend.outcome %}
 <div class="focus-note">
-    {% if weekend.outcome == "climbed" %}Climbed at {{ weekend.area.name }}.{% else %}Rained out - nobody was credited.{% endif %}
+    {% if weekend.outcome == "climbed" %}Climbed{% if weekend.saturday_crag %} Saturday at {{ weekend.saturday_crag }}{% endif %}{% if weekend.saturday_crag and weekend.sunday_crag %} and{% endif %}{% if weekend.sunday_crag %} Sunday at {{ weekend.sunday_crag }}{% endif %}.{% else %}Rained out - nobody was credited.{% endif %}
 </div>
 {% if credits %}
 <ul class="item-list">
@@ -40,11 +40,18 @@
     </label>
     {% endfor %}
 
-    <label class="field-label" for="log-area">Where</label>
-    <select id="log-area" name="area" hx-get="{{ todos_url }}" hx-include="closest form" hx-target="#log-todos" hx-trigger="change">
-        <option value="">—</option>
-        {% for area in areas %}<option value="{{ area.pk }}">{{ area.name }}</option>{% endfor %}
+    {% for day, label in day_fields %}
+    <label class="field-label" for="log-{{ day }}">{{ label }} - one crag, or none if you didn't climb</label>
+    <select id="log-{{ day }}" name="{{ day }}_crag" hx-get="{{ todos_url }}" hx-include="closest form" hx-target="#log-todos" hx-trigger="change">
+        <option value="">Didn't climb</option>
+        {% regroup crags by zone as zone_crags %}
+        {% for group in zone_crags %}
+        <optgroup label="{{ group.grouper.name }}">
+            {% for crag in group.list %}<option value="{{ crag.pk }}">{{ crag.name }}</option>{% endfor %}
+        </optgroup>
+        {% endfor %}
     </select>
+    {% endfor %}
 
     <div id="log-todos"></div>
     <button class="btn btn-primary" type="submit">Log weekend</button>

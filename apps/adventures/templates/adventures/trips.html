@@ -15,7 +15,7 @@
     <li>
         <div>
             <a href="{% url 'adventures:trip_edit' trip.pk %}">{{ trip.title }}</a>
-            <div class="option-reasons">{{ trip.area.name }} · {{ trip.start_date|date:"M j" }}–{{ trip.end_date|date:"M j" }}{% if trip.with_whom %} · with {{ trip.with_whom }}{% endif %}</div>
+            <div class="option-reasons">{{ trip.zone.name }} · {{ trip.start_date|date:"M j" }}–{{ trip.end_date|date:"M j" }}{% if trip.with_whom %} · with {{ trip.with_whom }}{% endif %}</div>
         </div>
     </li>
     {% endfor %}
@@ -23,7 +23,7 @@
     <li class="done">
         <div>
             <a href="{% url 'adventures:trip_edit' trip.pk %}">{{ trip.title }}</a>
-            <div class="option-reasons">{{ trip.area.name }} · {{ trip.start_date|date:"M j, Y" }}</div>
+            <div class="option-reasons">{{ trip.zone.name }} · {{ trip.start_date|date:"M j, Y" }}</div>
         </div>
     </li>
     {% endfor %}

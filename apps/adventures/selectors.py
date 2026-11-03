@@ -6,18 +6,15 @@ from django.db.models import Min
 
 from . import conditions, grades, ledger, weather
 from .grades import ClimbingLevel
-from .models import Area, Climber, Credit, Focus, ForecastCache, ToDo, Trip, Weekend
+from .models import Climber, Crag, Credit, Focus, ForecastCache, ToDo, Trip, Weekend, Zone
 from .weather import DayForecast
 
 VERDICT_RANK = {"go": 2, "marginal": 1, "no": 0}
 # How far back a rule may look (e.g. rain on sandstone).
 LOOKBACK_DAYS = 3
-
-
-@dataclass
-class DayRating:
-    forecast: DayForecast
-    rating: conditions.Rating
+# A second day at the same crag is worth less to the plan, so plans spread
+# sessions around unless one crag is clearly the best for the group.
+REPEAT_DISCOUNT = 0.5
 
 
 @dataclass
@@ -31,12 +28,12 @@ class Served:
 
 
 @dataclass
-class Option:
-    """One crag, rated over a set of days and against the group's to-dos."""
+class CragDay:
+    """One crag on one day: its weather and how well it serves the attendees."""
 
-    area: Area
-    days: list[DayRating]
-    score: int  # weather
+    crag: Crag
+    forecast: DayForecast
+    rating: conditions.Rating
     fair_score: float = 0.0
     served: list[Served] = field(default_factory=list)
     # Routes in attendees' volume bands, summed, when the crag has OpenBeta counts.
@@ -44,13 +41,33 @@ class Option:
 
     @property
     def verdict(self) -> str:
-        return conditions.Rating(score=self.score).verdict
+        return self.rating.verdict
+
+
+@dataclass
+class Plan:
+    """A weekend: exactly one crag per day, from the local zones or from one trip zone."""
+
+    label: str
+    zone: Zone | None  # None for the local plan
+    picks: list[CragDay]
+
+    @property
+    def is_local(self) -> bool:
+        return self.zone is None
+
+    @property
+    def verdict(self) -> str:
+        if not self.picks:
+            return "no"
+        score = round(sum(p.rating.score for p in self.picks) / len(self.picks))
+        return conditions.Rating(score=score).verdict
 
     @property
     def reasons(self) -> list[str]:
         seen: list[str] = []
-        for day in self.days:
-            for reason in day.rating.reasons:
+        for pick in self.picks:
+            for reason in pick.rating.reasons:
                 if reason not in seen:
                     seen.append(reason)
         return seen
@@ -59,8 +76,8 @@ class Option:
 @dataclass
 class TripOutlook:
     trip: Trip
-    option: Option | None  # None when no trip day is inside the forecast yet
-    alternatives: list[Option] = field(default_factory=list)
+    plan: Plan | None  # None when no trip day is inside the forecast yet
+    alternatives: list[Plan] = field(default_factory=list)
 
 
 @dataclass
@@ -69,7 +86,7 @@ class WeekendOutlook:
     weekend: Weekend | None
     attendees: list[Climber]
     climbers: list[Climber]
-    options: list[Option]
+    plans: list[Plan]
     trips: list[TripOutlook]
     focus: str = Focus.NONE
 
@@ -103,23 +120,100 @@ def weekend_saturdays(today: date, horizon_days: int = weather.FORECAST_DAYS) ->
     return saturdays
 
 
-def rate_days(area: Area, forecast: list[DayForecast], days: list[date]) -> list[DayRating]:
-    index = {day.date: i for i, day in enumerate(forecast)}
-    ratings = []
-    for day in days:
-        i = index.get(day)
-        if i is None:
-            continue
-        prior = forecast[max(0, i - LOOKBACK_DAYS) : i]
-        ratings.append(DayRating(forecast[i], conditions.rate(forecast[i], prior, area.sandstone)))
-    return ratings
+def rate_day(
+    forecast: list[DayForecast], day: date, sandstone: bool
+) -> tuple[DayForecast, conditions.Rating] | None:
+    for i, candidate in enumerate(forecast):
+        if candidate.date == day:
+            prior = forecast[max(0, i - LOOKBACK_DAYS) : i]
+            return candidate, conditions.rate(candidate, prior, sandstone)
+    return None
 
 
-def _rank_key(option: Option, focus: str) -> tuple:
-    # Weather always comes first; volume weekends then chase mileage, and
-    # otherwise the crag that best pays down what the group is owed wins.
-    volume = (option.volume_count or 0) if focus == Focus.VOLUME else 0
-    return (VERDICT_RANK[option.verdict], volume, option.fair_score, option.score)
+class _Context:
+    """Everything needed to score crags for one weekend's attendees."""
+
+    def __init__(
+        self,
+        attendees: list[Climber],
+        focus: str,
+        forecasts: dict[int, list[DayForecast]],
+        todos: list[ToDo],
+        balances: dict[int, float],
+        levels: dict[int, ClimbingLevel],
+    ):
+        self.attendees = attendees
+        self.focus = focus
+        self.forecasts = forecasts
+        self.balances = balances
+        self.bands = [
+            band for c in attendees if c.pk in levels and (band := levels[c.pk].volume_band())
+        ]
+        projects_only = focus == Focus.TRY_HARD
+        self.values = ledger.crag_values(todos, projects_only=projects_only)
+        self.todos_by_spot: dict[tuple[int, int], list[ToDo]] = defaultdict(list)
+        for todo in sorted(todos, key=lambda t: (t.rank, t.pk)):
+            if todo.sent_on is None and (todo.is_project or not projects_only):
+                self.todos_by_spot[(todo.climber_id, todo.crag_id)].append(todo)
+        self._cache: dict[tuple[int, date], CragDay | None] = {}
+
+    def crag_day(self, crag: Crag, day: date) -> CragDay | None:
+        key = (crag.pk, day)
+        if key not in self._cache:
+            self._cache[key] = self._score(crag, day)
+        return self._cache[key]
+
+    def _score(self, crag: Crag, day: date) -> CragDay | None:
+        rated = rate_day(self.forecasts.get(crag.zone_id, []), day, crag.sandstone)
+        if rated is None:
+            return None
+        crag_day = CragDay(crag, *rated)
+        for climber in self.attendees:
+            value = self.values.get((climber.pk, crag.pk), 0.0)
+            if value:
+                need = ledger.need_weight(self.balances.get(climber.pk, 0.0))
+                crag_day.fair_score += need * value
+                spot = self.todos_by_spot[(climber.pk, crag.pk)]
+                crag_day.served.append(Served(climber, spot, value, need))
+        crag_day.served.sort(key=lambda s: s.need * s.value, reverse=True)
+        if crag.grade_counts and self.bands:
+            crag_day.volume_count = sum(
+                grades.count_in_band(crag.grade_counts, band) for band in self.bands
+            )
+        return crag_day
+
+    def volume(self, crag_day: CragDay) -> int:
+        return (crag_day.volume_count or 0) if self.focus == Focus.VOLUME else 0
+
+    def plan(self, label: str, zone: Zone | None, crags: list[Crag], days: list[date]) -> Plan:
+        picks: list[CragDay] = []
+        for day in days:
+            options = [cd for crag in crags if (cd := self.crag_day(crag, day))]
+            if not options:
+                continue
+            picked = {p.crag.pk for p in picks}
+
+            def key(cd: CragDay, picked=picked) -> tuple:
+                # Weather first; volume weekends then chase mileage; otherwise
+                # the crag that best pays down what the group is owed.
+                discount = REPEAT_DISCOUNT if cd.crag.pk in picked else 1.0
+                return (
+                    VERDICT_RANK[cd.verdict],
+                    self.volume(cd) * discount,
+                    cd.fair_score * discount,
+                    cd.rating.score,
+                )
+
+            picks.append(max(options, key=key))
+        return Plan(label, zone, picks)
+
+    def plan_key(self, plan: Plan) -> tuple:
+        return (
+            sum(VERDICT_RANK[p.verdict] for p in plan.picks),
+            sum(self.volume(p) for p in plan.picks),
+            sum(p.fair_score for p in plan.picks),
+            sum(p.rating.score for p in plan.picks),
+        )
 
 
 def build_weekend(
@@ -127,7 +221,8 @@ def build_weekend(
     weekend: Weekend | None,
     climbers: list[Climber],
     attendees: list[Climber],
-    areas: list[Area],
+    zones: list[Zone],
+    crags: list[Crag],
     forecasts: dict[int, list[DayForecast]],
     todos: list[ToDo],
     balances: dict[int, float],
@@ -136,37 +231,21 @@ def build_weekend(
 ) -> WeekendOutlook:
     days = [saturday, saturday + timedelta(days=1)]
     focus = weekend.focus if weekend else Focus.NONE
-    values = ledger.crag_values(todos, projects_only=focus == Focus.TRY_HARD)
-    todos_by_spot: dict[tuple[int, int], list[ToDo]] = defaultdict(list)
-    for todo in todos:
-        if todo.sent_on is None and (todo.is_project or focus != Focus.TRY_HARD):
-            todos_by_spot[(todo.climber_id, todo.area_id)].append(todo)
+    ctx = _Context(attendees, focus, forecasts, todos, balances, levels)
 
-    options = []
-    for area in areas:
-        rated = rate_days(area, forecasts.get(area.id, []), days)
-        if not rated:
-            continue
-        # Rank by the better day - you can always pick which day to go.
-        option = Option(area=area, days=rated, score=max(d.rating.score for d in rated))
-        for climber in attendees:
-            value = values.get((climber.pk, area.pk), 0.0)
-            if not value:
-                continue
-            need = ledger.need_weight(balances.get(climber.pk, 0.0))
-            option.fair_score += need * value
-            spot = sorted(todos_by_spot[(climber.pk, area.pk)], key=lambda t: (t.rank, t.pk))
-            option.served.append(Served(climber, spot, value, need))
-        option.served.sort(key=lambda s: s.need * s.value, reverse=True)
-        if area.grade_counts:
-            bands = [levels[c.pk].volume_band() for c in attendees if c.pk in levels]
-            bands = [b for b in bands if b]
-            if bands:
-                option.volume_count = sum(
-                    grades.count_in_band(area.grade_counts, b) for b in bands
-                )
-        options.append(option)
-    options.sort(key=lambda o: _rank_key(o, focus), reverse=True)
+    crags_by_zone: dict[int, list[Crag]] = defaultdict(list)
+    for crag in crags:
+        crags_by_zone[crag.zone_id].append(crag)
+    local = [c for z in zones if z.is_local for c in crags_by_zone[z.pk]]
+
+    plans = []
+    if local:
+        plans.append(ctx.plan("Local", None, local, days))
+    for zone in zones:
+        if not zone.is_local and crags_by_zone[zone.pk]:
+            plans.append(ctx.plan(zone.name, zone, crags_by_zone[zone.pk], days))
+    plans = [p for p in plans if p.picks]
+    plans.sort(key=ctx.plan_key, reverse=True)
 
     outlooks = []
     for trip in trips:
@@ -176,25 +255,24 @@ def build_weekend(
             trip.start_date + timedelta(days=n)
             for n in range((trip.end_date - trip.start_date).days + 1)
         ]
-        rated = rate_days(trip.area, forecasts.get(trip.area_id, []), trip_days)
-        option = None
-        alternatives: list[Option] = []
-        if rated:
-            # A trip has to work across all its days, so average rather than best-day.
-            score = round(sum(d.rating.score for d in rated) / len(rated))
-            option = Option(area=trip.area, days=rated, score=score)
-            if option.verdict != "go":
-                alternatives = [
-                    o for o in options if o.verdict == "go" and o.area.pk != trip.area_id
-                ][:3]
-        outlooks.append(TripOutlook(trip=trip, option=option, alternatives=alternatives))
+        plan = ctx.plan(trip.zone.name, trip.zone, crags_by_zone[trip.zone_id], trip_days)
+        alternatives: list[Plan] = []
+        if not plan.picks:
+            plan = None
+        elif plan.verdict != "go":
+            alternatives = [
+                p
+                for p in plans
+                if p.verdict == "go" and (p.zone is None or p.zone.pk != trip.zone_id)
+            ][:3]
+        outlooks.append(TripOutlook(trip=trip, plan=plan, alternatives=alternatives))
 
     return WeekendOutlook(
         saturday=saturday,
         weekend=weekend,
         attendees=attendees,
         climbers=climbers,
-        options=options,
+        plans=plans,
         trips=outlooks,
         focus=focus,
     )
@@ -209,13 +287,14 @@ def season_balances() -> dict[int, float]:
 
 
 def build_weekends(saturdays: list[date], today: date) -> list[WeekendOutlook]:
-    areas = list(Area.objects.all())
-    forecasts = weather.get_forecasts(areas)
+    zones = list(Zone.objects.all())
+    crags = list(Crag.objects.select_related("zone"))
+    forecasts = weather.get_forecasts(zones)
     climbers = list(Climber.objects.filter(is_active=True))
     todos = list(ToDo.objects.filter(climber__in=climbers, sent_on__isnull=True))
     balances = season_balances()
     levels = climber_levels(climbers)
-    trips = list(Trip.objects.filter(end_date__gte=today).select_related("area"))
+    trips = list(Trip.objects.filter(end_date__gte=today).select_related("zone"))
     weekends = {
         w.saturday: w
         for w in Weekend.objects.filter(saturday__in=saturdays).prefetch_related("attendees")
@@ -233,7 +312,8 @@ def build_weekends(saturdays: list[date], today: date) -> list[WeekendOutlook]:
                 weekend,
                 climbers,
                 attendees,
-                areas,
+                zones,
+                crags,
                 forecasts,
                 todos,
                 balances,

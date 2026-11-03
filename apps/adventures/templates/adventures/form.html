@@ -24,7 +24,7 @@
 {% block after_form %}{% endblock %}
 {% if delete_url %}
 <form method="post" action="{{ delete_url }}" style="margin-top: 1.5rem;"
-      onsubmit="return confirm('Delete this {{ noun }}?{% if noun == "area" %} Its goals and trips go with it.{% endif %}');">
+      onsubmit="return confirm('Delete this {{ noun }}?{% if noun == "zone" %} Its crags, their to-dos and its trips go with it.{% elif noun == "crag" %} Its to-dos go with it.{% endif %}');">
     {% csrf_token %}
     <button class="btn" type="submit">Delete {{ noun }}</button>
 </form>

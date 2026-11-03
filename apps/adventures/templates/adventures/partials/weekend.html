@@ -9,7 +9,7 @@
 
     {% if weekend.is_logged %}
     <div class="focus-note">
-        {% if weekend.weekend.outcome == "climbed" %}Climbed at {{ weekend.weekend.area.name }}.{% else %}Rained out.{% endif %}
+        {% if weekend.weekend.outcome == "climbed" %}Climbed{% for crag in weekend.weekend.climbed_crags %} {% if not forloop.first %}and {% endif %}at {{ crag }}{% endfor %}.{% else %}Rained out.{% endif %}
         <a href="{% url 'adventures:season' %}">See the season</a>
     </div>
     {% else %}
@@ -39,7 +39,7 @@
     {% endif %}
 
     {% for outlook in weekend.trips %}
-    <div class="trip-card verdict-{{ outlook.option.verdict|default:'unknown' }}">
+    <div class="trip-card verdict-{{ outlook.plan.verdict|default:'unknown' }}">
         <div class="trip-head">
             <div>
                 <div class="option-title">
@@ -47,46 +47,43 @@
                     <a href="{% url 'adventures:trip_edit' outlook.trip.pk %}">{{ outlook.trip.title }}</a>
                 </div>
                 <div class="option-reasons">
-                    {{ outlook.trip.area.name }} · {{ outlook.trip.start_date|date:"M j" }}{% if outlook.trip.end_date != outlook.trip.start_date %}–{{ outlook.trip.end_date|date:"M j" }}{% endif %}{% if outlook.trip.with_whom %} · with {{ outlook.trip.with_whom }}{% endif %}
+                    {{ outlook.trip.zone.name }} · {{ outlook.trip.start_date|date:"M j" }}{% if outlook.trip.end_date != outlook.trip.start_date %}–{{ outlook.trip.end_date|date:"M j" }}{% endif %}{% if outlook.trip.with_whom %} · with {{ outlook.trip.with_whom }}{% endif %}
                 </div>
             </div>
-            {% if outlook.option %}<span class="verdict-badge">{{ outlook.option.verdict|capfirst }}</span>{% endif %}
+            {% if outlook.plan %}<span class="verdict-badge">{{ outlook.plan.verdict|capfirst }}</span>{% endif %}
         </div>
-        {% if outlook.option %}
-            {% include "adventures/partials/days.html" with days=outlook.option.days %}
-            {% if outlook.option.reasons %}<div class="option-reasons">{{ outlook.option.reasons|join:" · " }}</div>{% endif %}
-            {% if outlook.option.verdict != "go" %}
+        {% if outlook.plan %}
+            <ol class="option-list">
+                {% for pick in outlook.plan.picks %}
+                    {% include "adventures/partials/crag_day.html" %}
+                {% endfor %}
+            </ol>
+            {% if outlook.plan.verdict != "go" %}
             <div class="pivot">
                 <strong>Consider a pivot:</strong>
                 {% if outlook.alternatives %}
-                    {% for alt in outlook.alternatives %}{{ alt.area.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                    {% for alt in outlook.alternatives %}{{ alt.label }}{% if not forloop.last %}, {% endif %}{% endfor %}
                 {% else %}
                     nothing rates better this weekend.
                 {% endif %}
             </div>
             {% endif %}
         {% else %}
-            <div class="option-reasons">Not in the forecast window yet.</div>
+            <div class="option-reasons">Not in the forecast window yet{% if not outlook.trip.zone.crags.exists %}, and {{ outlook.trip.zone.name }} has no crags yet{% endif %}.</div>
         {% endif %}
     </div>
     {% endfor %}
 
-    {% if weekend.options %}
-    <ol class="option-list">
-        {% for option in weekend.options|slice:":5" %}
-            {% include "adventures/partials/option.html" %}
-        {% endfor %}
-    </ol>
-    {% if weekend.options|length > 5 %}
-    <details class="more-options">
-        <summary>{{ weekend.options|length|add:"-5" }} more</summary>
-        <ol class="option-list">
-            {% for option in weekend.options|slice:"5:" %}
-                {% include "adventures/partials/option.html" %}
+    {% if weekend.plans %}
+        {% include "adventures/partials/plan.html" with plan=weekend.plans.0 %}
+        {% if weekend.plans|length > 1 %}
+        <details class="more-options">
+            <summary>{{ weekend.plans|length|add:"-1" }} other plan{{ weekend.plans|length|add:"-1"|pluralize }}</summary>
+            {% for plan in weekend.plans|slice:"1:" %}
+                {% include "adventures/partials/plan.html" %}
             {% endfor %}
-        </ol>
-    </details>
-    {% endif %}
+        </details>
+        {% endif %}
     {% else %}
     <div class="option-reasons">No forecast available - Open-Meteo may be unreachable.</div>
     {% endif %}

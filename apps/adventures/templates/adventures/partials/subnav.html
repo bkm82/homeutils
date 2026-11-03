@@ -4,6 +4,6 @@
     <a class="nav-link{% if name == 'season' or name == 'log' %} active{% endif %}" href="{% url 'adventures:season' %}">Season</a>
     <a class="nav-link{% if name == 'climbers' or name == 'climber' %} active{% endif %}" href="{% url 'adventures:climbers' %}">Climbers</a>
     <a class="nav-link{% if name == 'trips' %} active{% endif %}" href="{% url 'adventures:trips' %}">Trips</a>
-    <a class="nav-link{% if name == 'areas' %} active{% endif %}" href="{% url 'adventures:areas' %}">Crags</a>
+    <a class="nav-link{% if name == 'zones' %} active{% endif %}" href="{% url 'adventures:zones' %}">Zones</a>
 </div>
 {% endwith %}
