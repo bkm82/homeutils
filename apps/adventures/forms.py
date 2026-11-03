@@ -25,9 +25,25 @@ class UUIDListField(forms.CharField):
 
 
 class ZoneForm(forms.ModelForm):
+    openbeta_uuids = UUIDListField(
+        required=False,
+        label="OpenBeta regions",
+        help_text="Search below to add. Climbs found by search are filed under these "
+        "regions' sub-areas as crags.",
+        widget=forms.TextInput(attrs={"placeholder": "OpenBeta area ids"}),
+    )
+
     class Meta:
         model = Zone
-        fields = ["name", "latitude", "longitude", "is_local", "notes"]
+        fields = [
+            "name",
+            "latitude",
+            "longitude",
+            "is_local",
+            "sandstone",
+            "notes",
+            "openbeta_uuids",
+        ]
         widgets = {
             "latitude": forms.NumberInput(attrs={"step": "any"}),
             "longitude": forms.NumberInput(attrs={"step": "any"}),

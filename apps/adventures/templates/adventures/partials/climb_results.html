@@ -1,0 +1,28 @@
+{% if error %}
+<p class="option-reasons">{{ error }}</p>
+{% elif results %}
+<ul class="item-list">
+    {% for climb in results %}
+    <li>
+        <div>
+            {{ climb.name }} <span class="grade">{{ climb.grade }}</span>
+            <div class="option-reasons">{{ zone.name }} › {{ climb.path }}</div>
+        </div>
+        {% if climb.uuid in on_list %}
+        <span class="option-reasons">On the list</span>
+        {% else %}
+        <form method="post" action="{% url 'adventures:todo_from_openbeta' climber.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="zone" value="{{ zone.pk }}">
+            <input type="hidden" name="climb" value="{{ climb.uuid }}">
+            <button class="btn" type="submit">Add</button>
+        </form>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% elif zone and query|length >= 3 %}
+<p class="option-reasons">No climbs in {{ zone.name }} match “{{ query }}”.</p>
+{% elif not zone and query %}
+<p class="option-reasons">Pick a zone first.</p>
+{% endif %}

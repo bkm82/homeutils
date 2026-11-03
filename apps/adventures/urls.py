@@ -21,6 +21,17 @@ urlpatterns = [
         name="climber_use_suggested",
     ),
     path("adventures/climbers/<int:climber_pk>/todos/new/", views.todo_add, name="todo_add"),
+    path(
+        "adventures/climbers/<int:climber_pk>/todos/search/",
+        views.climb_search,
+        name="climb_search",
+    ),
+    path(
+        "adventures/climbers/<int:climber_pk>/todos/from-openbeta/",
+        views.todo_from_openbeta,
+        name="todo_from_openbeta",
+    ),
+    path("adventures/zones/from-openbeta/", views.zone_from_openbeta, name="zone_from_openbeta"),
     path("adventures/todos/<int:pk>/edit/", views.todo_edit, name="todo_edit"),
     path("adventures/todos/<int:pk>/send/", views.todo_send, name="todo_send"),
     path("adventures/todos/<int:pk>/move/<str:direction>/", views.todo_move, name="todo_move"),

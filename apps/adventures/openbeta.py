@@ -72,3 +72,78 @@ def fetch_grade_counts(uuids: list[str]) -> dict[str, int]:
         for bucket in area["aggregate"]["byGrade"]:
             counts[bucket["label"]] += bucket["count"]
     return dict(counts)
+
+
+def area_info(uuid: str) -> dict:
+    """{uuid, name, latitude, longitude} for one OpenBeta area."""
+    data = _query(
+        "query($uuid: ID) { area(uuid: $uuid) { uuid area_name metadata { lat lng } } }",
+        {"uuid": uuid},
+    )
+    area = data["area"]
+    if area is None:
+        raise ValueError(f"No OpenBeta area {uuid}")
+    return {
+        "uuid": area["uuid"],
+        "name": area["area_name"],
+        "latitude": area["metadata"]["lat"],
+        "longitude": area["metadata"]["lng"],
+    }
+
+
+BULK_PAGE = 500
+
+
+def region_climbs(region_uuid: str) -> list[dict]:
+    """Every climb under an OpenBeta area, each tagged with the crag it belongs to.
+
+    The crag is the region's direct sub-area on the climb's path (e.g. Red Rocks ›
+    Juniper Canyon for Crimson Chrysalis), or the region itself for climbs
+    attached straight to it.
+    """
+    region = _query("query($uuid: ID) { area(uuid: $uuid) { ancestors } }", {"uuid": region_uuid})
+    if region["area"] is None:
+        raise ValueError(f"No OpenBeta area {region_uuid}")
+    # `ancestors` ends with the area itself, so a descendant's ancestors[depth]
+    # is the region's direct child on its path.
+    ancestors = region["area"]["ancestors"]
+    depth = len(ancestors)
+    areas = []
+    while True:
+        page = _query(
+            "query($ancestors: [String!]!, $limit: Int, $offset: Int) {"
+            " bulkAreas(ancestors: $ancestors, limit: $limit, offset: $offset)"
+            " { uuid area_name ancestors climbs { uuid name grades { yds vscale } } } }",
+            {"ancestors": ancestors, "limit": BULK_PAGE, "offset": len(areas)},
+        )["bulkAreas"]
+        areas.extend(page)
+        if len(page) < BULK_PAGE:
+            break
+    names = {area["uuid"]: area["area_name"] for area in areas}
+    climbs = []
+    for area in areas:
+        crag_uuid = area["ancestors"][depth] if len(area["ancestors"]) > depth else region_uuid
+        path = [names.get(uuid, "") for uuid in area["ancestors"][depth:]]
+        for climb in area["climbs"]:
+            grades = climb.get("grades") or {}
+            climbs.append(
+                {
+                    "uuid": climb["uuid"],
+                    "name": climb["name"],
+                    "grade": grades.get("yds") or grades.get("vscale") or "",
+                    "crag_uuid": crag_uuid,
+                    "crag": names.get(crag_uuid, ""),
+                    "path": " › ".join(p for p in path if p),
+                }
+            )
+    return climbs
+
+
+def search_climbs(index: list[dict], query: str, limit: int = 20) -> list[dict]:
+    """Climbs whose name contains `query` (case-insensitive), prefix matches first."""
+    query = query.casefold().strip()
+    if not query:
+        return []
+    matches = [c for c in index if query in c["name"].casefold()]
+    matches.sort(key=lambda c: (not c["name"].casefold().startswith(query), c["name"]))
+    return matches[:limit]

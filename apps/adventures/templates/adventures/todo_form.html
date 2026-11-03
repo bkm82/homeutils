@@ -1,0 +1,32 @@
+{% extends "adventures/form.html" %}
+
+{% block before_form %}
+{% url 'adventures:climb_search' climber.pk as search_url %}
+<section class="climb-search">
+    <h2 class="section-title">Find it on OpenBeta</h2>
+    <form class="med-form" hx-get="{{ search_url }}" hx-target="#climb-results" hx-indicator="#climb-loading"
+          hx-trigger="input changed delay:500ms from:#climb-q, change from:#climb-zone, submit">
+        <label class="field-label" for="climb-zone">Where</label>
+        <select id="climb-zone" name="zone">
+            <option value="">Pick a zone…</option>
+            {% for zone in zones %}<option value="{{ zone.pk }}"{% if zone.pk == selected_zone %} selected{% endif %}>{{ zone.name }}</option>{% endfor %}
+        </select>
+        <label class="field-label" for="climb-q">Climb</label>
+        <input id="climb-q" type="search" name="q" placeholder="e.g. Crimson Chrysalis" autocomplete="off">
+        <span id="climb-loading" class="htmx-indicator option-reasons">Searching - the first search in a zone loads its climbs from OpenBeta, which can take a few seconds…</span>
+    </form>
+    <div id="climb-results"></div>
+
+    <details class="more-options">
+        <summary>Somewhere that isn't a zone yet?</summary>
+        <div class="openbeta-search">
+            <input type="search" name="q" placeholder="Search OpenBeta regions, e.g. Red Rocks"
+                   hx-get="{% url 'adventures:openbeta_search' %}?mode=zone&next={{ request.path|urlencode }}"
+                   hx-trigger="input changed delay:600ms, search"
+                   hx-target="#zone-results">
+            <div id="zone-results"></div>
+        </div>
+    </details>
+</section>
+<h2 class="section-title">Or add it by hand</h2>
+{% endblock %}

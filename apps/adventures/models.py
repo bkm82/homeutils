@@ -23,7 +23,17 @@ class Zone(models.Model):
     is_local = models.BooleanField(
         default=False, help_text="Close enough to day-trip, so days can mix local zones."
     )
+    sandstone = models.BooleanField(
+        default=False, help_text="New crags added here from OpenBeta start as sandstone."
+    )
     notes = models.CharField(max_length=200, blank=True)
+    # OpenBeta areas covering this zone. Their direct sub-areas are its crags
+    # when a climb is added from OpenBeta search.
+    openbeta_uuids = models.JSONField(default=list, blank=True)
+    # Every climb under openbeta_uuids, for searching by name (see openbeta.py).
+    climb_index = models.JSONField(default=list, blank=True)
+    climb_index_key = models.CharField(max_length=400, blank=True)
+    climb_index_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-is_local", "name"]
@@ -98,6 +108,8 @@ class ToDo(models.Model):
     sessions = models.PositiveIntegerField(default=0)
     sent_on = models.DateField(null=True, blank=True)
     notes = models.CharField(max_length=200, blank=True)
+    # Set when added from OpenBeta search.
+    openbeta_uuid = models.CharField(max_length=36, blank=True)
 
     class Meta:
         ordering = ["climber__name", "rank", "pk"]
@@ -108,6 +120,10 @@ class ToDo(models.Model):
     @property
     def is_sent(self) -> bool:
         return self.sent_on is not None
+
+    @property
+    def openbeta_url(self) -> str:
+        return f"https://openbeta.io/climb/{self.openbeta_uuid}" if self.openbeta_uuid else ""
 
 
 class Weekend(models.Model):
