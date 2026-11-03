@@ -1,0 +1,11 @@
+<div class="plan verdict-{{ plan.verdict }}">
+    <div class="plan-head">
+        <h3>{{ plan.label }}</h3>
+        <span class="option-reasons">{% if plan.is_local %}day trips - each day can be any local crag{% else %}trip - both days in {{ plan.zone.name }}{% endif %}</span>
+    </div>
+    <ol class="option-list">
+        {% for pick in plan.picks %}
+            {% include "adventures/partials/crag_day.html" with show_zone=plan.is_local %}
+        {% endfor %}
+    </ol>
+</div>

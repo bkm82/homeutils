@@ -10,28 +10,50 @@ class Focus(models.TextChoices):
     TRY_HARD = "try_hard", "Try hard"
 
 
-class Area(models.Model):
-    """A crag worth going to - shared by the whole group."""
+class Zone(models.Model):
+    """A climbing region (Sedona, Red Rocks, ...) - where the forecast comes from.
+
+    Local zones are day-trippable: each day of a weekend can be at a crag in
+    any local zone. A trip zone is somewhere you go for the whole weekend.
+    """
 
     name = models.CharField(max_length=120, unique=True)
     latitude = models.FloatField()
     longitude = models.FloatField()
+    is_local = models.BooleanField(
+        default=False, help_text="Close enough to day-trip, so days can mix local zones."
+    )
+    notes = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["-is_local", "name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Crag(models.Model):
+    """One crag within a zone - the group climbs at exactly one crag per day."""
+
+    zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name="crags")
+    name = models.CharField(max_length=120)
     sandstone = models.BooleanField(
         default=False,
         help_text="Soft rock that shouldn't be climbed for a day or two after rain.",
     )
     notes = models.CharField(max_length=200, blank=True)
-    # OpenBeta areas whose climbs count toward this area; their grade
+    # OpenBeta areas whose climbs count toward this crag; their grade
     # histograms are summed into grade_counts ({"5.10a": 12, ...}).
     openbeta_uuids = models.JSONField(default=list, blank=True)
     grade_counts = models.JSONField(default=dict, blank=True)
     grade_counts_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["name"]
+        ordering = ["zone__name", "name"]
+        constraints = [models.UniqueConstraint(fields=["zone", "name"], name="unique_crag")]
 
     def __str__(self) -> str:
-        return self.name
+        return f"{self.zone} › {self.name}"
 
     @property
     def route_total(self) -> int:
@@ -67,7 +89,7 @@ class ToDo(models.Model):
 
     climber = models.ForeignKey(Climber, on_delete=models.CASCADE, related_name="todos")
     name = models.CharField(max_length=120)
-    area = models.ForeignKey(Area, on_delete=models.CASCADE, related_name="todos")
+    crag = models.ForeignKey(Crag, on_delete=models.CASCADE, related_name="todos")
     grade = models.CharField(max_length=20, blank=True)
     is_project = models.BooleanField(
         default=False, help_text="Something to work over several sessions, not just onsight."
@@ -100,13 +122,12 @@ class Weekend(models.Model):
     attendees = models.ManyToManyField(Climber, blank=True, related_name="weekends")
     focus = models.CharField(max_length=20, choices=Focus, default=Focus.NONE, blank=True)
     outcome = models.CharField(max_length=20, choices=Outcome, default=Outcome.PLANNED, blank=True)
-    area = models.ForeignKey(
-        Area,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="weekends",
-        help_text="Where the group actually climbed.",
+    # Where the group climbed each day; blank for a day that didn't happen.
+    saturday_crag = models.ForeignKey(
+        Crag, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    sunday_crag = models.ForeignKey(
+        Crag, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
 
     class Meta:
@@ -115,12 +136,17 @@ class Weekend(models.Model):
     def __str__(self) -> str:
         return f"Weekend of {self.saturday}"
 
+    @property
+    def climbed_crags(self) -> list[Crag]:
+        return [c for c in (self.saturday_crag, self.sunday_crag) if c]
+
 
 class Credit(models.Model):
     """What a climbed weekend was worth to one attendee, frozen when it's logged.
 
-    Snapshotted rather than recomputed so later edits to to-do lists (sends,
-    re-ranking) don't rewrite the season's history.
+    Each climbed day counts as half a weekend, so `value`/`share` sum half of
+    each day's crag value/share. Snapshotted rather than recomputed so later
+    edits to to-do lists (sends, re-ranking) don't rewrite the season's history.
     """
 
     weekend = models.ForeignKey(Weekend, on_delete=models.CASCADE, related_name="credits")
@@ -142,7 +168,7 @@ class Trip(models.Model):
     """A locked-in plan (e.g. with friends) to keep an eye on as the forecast firms up."""
 
     title = models.CharField(max_length=120)
-    area = models.ForeignKey(Area, on_delete=models.CASCADE, related_name="trips")
+    zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name="trips")
     start_date = models.DateField()
     end_date = models.DateField()
     with_whom = models.CharField(max_length=200, blank=True)
@@ -179,10 +205,10 @@ class Tick(models.Model):
 
 
 class ForecastCache(models.Model):
-    """Last Open-Meteo daily payload for an area, so page loads don't hit the API every time."""
+    """Last Open-Meteo daily payload for a zone, so page loads don't hit the API every time."""
 
-    area = models.OneToOneField(Area, on_delete=models.CASCADE, related_name="forecast")
-    # Coordinates the payload was fetched for - editing the area's location
+    zone = models.OneToOneField(Zone, on_delete=models.CASCADE, related_name="forecast")
+    # Coordinates the payload was fetched for - editing the zone's location
     # invalidates the cache.
     latitude = models.FloatField()
     longitude = models.FloatField()
@@ -190,4 +216,4 @@ class ForecastCache(models.Model):
     daily = models.JSONField()
 
     def __str__(self) -> str:
-        return f"{self.area} @ {self.fetched_at}"
+        return f"{self.zone} @ {self.fetched_at}"

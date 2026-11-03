@@ -38,7 +38,7 @@
         <div>
             <span class="rank">#{{ todo.rank }}</span>
             <a href="{% url 'adventures:todo_edit' todo.pk %}">{{ todo.name }}</a>{% if todo.grade %} <span class="grade">{{ todo.grade }}</span>{% endif %}
-            <div class="option-reasons">{{ todo.area.name }}{% if todo.is_project %} · project{% endif %}{% if todo.sessions %} · {{ todo.sessions }} session{{ todo.sessions|pluralize }}{% endif %} · weight {{ weight|floatformat:2 }}</div>
+            <div class="option-reasons">{{ todo.crag }}{% if todo.is_project %} · project{% endif %}{% if todo.sessions %} · {{ todo.sessions }} session{{ todo.sessions|pluralize }}{% endif %} · weight {{ weight|floatformat:2 }}</div>
         </div>
         <div class="card-actions">
             {% if not forloop.first %}
@@ -69,7 +69,7 @@
     <li class="done">
         <div>
             {{ todo.name }}{% if todo.grade %} <span class="grade">{{ todo.grade }}</span>{% endif %}
-            <div class="option-reasons">{{ todo.area.name }} · sent {{ todo.sent_on|date:"M j, Y" }}{% if todo.sessions %} after {{ todo.sessions }} session{{ todo.sessions|pluralize }}{% endif %}</div>
+            <div class="option-reasons">{{ todo.crag }} · sent {{ todo.sent_on|date:"M j, Y" }}{% if todo.sessions %} after {{ todo.sessions }} session{{ todo.sessions|pluralize }}{% endif %}</div>
         </div>
         <form method="post" action="{% url 'adventures:todo_send' todo.pk %}">
             {% csrf_token %}

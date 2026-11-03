@@ -14,8 +14,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import grades, ledger, openbeta, selectors
-from .forms import AreaForm, ClimberForm, TickImportForm, ToDoForm, TripForm
-from .models import Area, Climber, Credit, Focus, Tick, ToDo, Trip, Weekend
+from .forms import ClimberForm, CragForm, TickImportForm, ToDoForm, TripForm, ZoneForm
+from .models import Climber, Crag, Credit, Focus, Tick, ToDo, Trip, Weekend, Zone
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def planner(request: HttpRequest) -> HttpResponse:
     saturdays = selectors.weekend_saturdays(today)
     weekends = selectors.build_weekends(saturdays, today)
     last_sunday = weekends[-1].sunday if weekends else today
-    later_trips = Trip.objects.filter(start_date__gt=last_sunday).select_related("area")
+    later_trips = Trip.objects.filter(start_date__gt=last_sunday).select_related("zone")
     return render(
         request,
         "adventures/planner.html",
@@ -56,7 +56,7 @@ def planner(request: HttpRequest) -> HttpResponse:
             "later_trips": later_trips,
             "focuses": Focus.choices,
             "today": today,
-            "has_areas": Area.objects.exists(),
+            "has_crags": Crag.objects.exists(),
             "has_climbers": Climber.objects.filter(is_active=True).exists(),
             "updated_at": selectors.forecast_updated_at(),
         },
@@ -101,14 +101,18 @@ def _renumber(climber_id: int) -> None:
             todo.save(update_fields=["rank"])
 
 
-def _log_todos(attendee_ids: list[int], area_id: int | None) -> list[ToDo]:
-    if not area_id:
+def _log_todos(attendee_ids: list[int], crag_ids: list[int]) -> list[ToDo]:
+    if not crag_ids:
         return []
     return list(
         ToDo.objects.filter(
-            climber_id__in=attendee_ids, area_id=area_id, sent_on__isnull=True
-        ).select_related("climber")
+            climber_id__in=attendee_ids, crag_id__in=crag_ids, sent_on__isnull=True
+        ).select_related("climber", "crag__zone")
     )
+
+
+def _ids(values: list[str]) -> list[int]:
+    return [int(v) for v in values if v.isdigit()]
 
 
 @login_required
@@ -123,16 +127,18 @@ def log_weekend(request: HttpRequest, saturday: str) -> HttpResponse:
         if weekend and weekend.outcome:
             return HttpResponseBadRequest("Already logged - undo it first")
         outcome = request.POST.get("outcome")
-        attendee_ids = [int(pk) for pk in request.POST.getlist("attendees") if pk.isdigit()]
-        attendees = list(Climber.objects.filter(pk__in=attendee_ids))
-        area = Area.objects.filter(pk=request.POST.get("area") or None).first()
+        attendees = list(Climber.objects.filter(pk__in=_ids(request.POST.getlist("attendees"))))
+        day_crags = [
+            Crag.objects.filter(pk=request.POST.get(f"{name}_crag") or None).first()
+            for name in ("saturday", "sunday")
+        ]
         error = None
         if outcome not in (Weekend.Outcome.CLIMBED, Weekend.Outcome.RAINED_OUT):
             error = "Pick what happened."
-        elif outcome == Weekend.Outcome.CLIMBED and (not area or not attendees):
-            error = "Pick where you climbed and who came."
+        elif outcome == Weekend.Outcome.CLIMBED and (not any(day_crags) or not attendees):
+            error = "Pick where you climbed (at least one day) and who came."
         if not error:
-            _apply_log(day, outcome, area, attendees, request.POST)
+            _apply_log(day, outcome, day_crags, attendees, request.POST)
             messages.success(request, f"Logged the weekend of {day:%b %-d}.")
             return redirect("adventures:season")
         messages.error(request, error)
@@ -146,33 +152,39 @@ def log_weekend(request: HttpRequest, saturday: str) -> HttpResponse:
             "weekend": weekend,
             "climbers": climbers,
             "attendee_ids": {c.pk for c in attendees},
-            "areas": Area.objects.all(),
+            "crags": Crag.objects.select_related("zone").order_by("zone__name", "name"),
+            "day_fields": [("saturday", "Saturday"), ("sunday", "Sunday")],
             "credits": weekend.credits.select_related("climber") if weekend else [],
         },
     )
 
 
 @transaction.atomic
-def _apply_log(day: date, outcome: str, area: Area | None, attendees: list[Climber], post):
+def _apply_log(
+    day: date, outcome: str, day_crags: list[Crag | None], attendees: list[Climber], post
+):
     weekend = _weekend(day)
     weekend.attendees.set(attendees)
     weekend.outcome = outcome
-    weekend.area = area if outcome == Weekend.Outcome.CLIMBED else None
-    weekend.save(update_fields=["outcome", "area"])
+    climbed = outcome == Weekend.Outcome.CLIMBED
+    weekend.saturday_crag, weekend.sunday_crag = day_crags if climbed else (None, None)
+    weekend.save(update_fields=["outcome", "saturday_crag", "sunday_crag"])
     weekend.credits.all().delete()
-    if outcome != Weekend.Outcome.CLIMBED or area is None:
+    crag_ids = [c.pk for c in weekend.climbed_crags]
+    if not crag_ids:
         return
 
     # Credit is worked out from the lists as they stood going in, before
     # this weekend's sends come off them.
     values = ledger.crag_values(ToDo.objects.filter(sent_on__isnull=True))
+    attendee_ids = [c.pk for c in attendees]
     Credit.objects.bulk_create(
         Credit(weekend=weekend, climber_id=cid, value=value, share=share)
-        for cid, value, share in ledger.split_credit([c.pk for c in attendees], area.pk, values)
+        for cid, (value, share) in ledger.split_credit(attendee_ids, crag_ids, values).items()
     )
-    eligible = {t.pk: t for t in _log_todos([c.pk for c in attendees], area.pk)}
-    worked = {int(pk) for pk in post.getlist("worked") if pk.isdigit()}
-    sent = {int(pk) for pk in post.getlist("sent") if pk.isdigit()}
+    eligible = {t.pk: t for t in _log_todos(attendee_ids, crag_ids)}
+    worked = set(_ids(post.getlist("worked")))
+    sent = set(_ids(post.getlist("sent")))
     for pk in (worked | sent) & eligible.keys():
         todo = eligible[pk]
         todo.sessions += 1
@@ -186,9 +198,8 @@ def _apply_log(day: date, outcome: str, area: Area | None, attendees: list[Climb
 @login_required
 def log_todos(request: HttpRequest, saturday: str) -> HttpResponse:
     _saturday(saturday)
-    attendee_ids = [int(pk) for pk in request.GET.getlist("attendees") if pk.isdigit()]
-    area_id = request.GET.get("area")
-    todos = _log_todos(attendee_ids, int(area_id) if area_id and area_id.isdigit() else None)
+    crag_ids = _ids([request.GET.get("saturday_crag", ""), request.GET.get("sunday_crag", "")])
+    todos = _log_todos(_ids(request.GET.getlist("attendees")), crag_ids)
     return render(request, "adventures/partials/log_todos.html", {"todos": todos})
 
 
@@ -199,8 +210,8 @@ def undo_log(request: HttpRequest, saturday: str) -> HttpResponse:
     with transaction.atomic():
         weekend.credits.all().delete()
         weekend.outcome = Weekend.Outcome.PLANNED
-        weekend.area = None
-        weekend.save(update_fields=["outcome", "area"])
+        weekend.saturday_crag = weekend.sunday_crag = None
+        weekend.save(update_fields=["outcome", "saturday_crag", "sunday_crag"])
     messages.success(
         request, "Log undone. Sessions and sends recorded with it stay - edit those to-dos."
     )
@@ -224,7 +235,9 @@ def season(request: HttpRequest) -> HttpResponse:
     )
 
     today = timezone.localdate()
-    logged = Weekend.objects.exclude(outcome="").select_related("area")
+    logged = Weekend.objects.exclude(outcome="").select_related(
+        "saturday_crag__zone", "sunday_crag__zone"
+    )
     logged = logged.prefetch_related("credits__climber").order_by("-saturday")
     logged_days = {w.saturday for w in logged}
     last_saturday = today - timedelta(days=(today.weekday() - 5) % 7)
@@ -318,7 +331,7 @@ def climber_detail(request: HttpRequest, pk: int) -> HttpResponse:
                 messages.success(request, f"Imported {len(rows)} ticks for {climber}.")
                 return redirect("adventures:climber", pk=pk)
 
-    todos = list(climber.todos.select_related("area"))
+    todos = list(climber.todos.select_related("crag__zone"))
     weights = ledger.todo_weights(todos)
     return render(
         request,
@@ -418,7 +431,7 @@ def todo_send(request: HttpRequest, pk: int) -> HttpResponse:
 @login_required
 def trip_list(request: HttpRequest) -> HttpResponse:
     today = timezone.localdate()
-    trips = Trip.objects.select_related("area")
+    trips = Trip.objects.select_related("zone")
     return render(
         request,
         "adventures/trips.html",
@@ -448,55 +461,76 @@ def trip_edit(request: HttpRequest, pk: int) -> HttpResponse:
 
 
 @login_required
-def area_list(request: HttpRequest) -> HttpResponse:
-    return render(request, "adventures/areas.html", {"areas": Area.objects.all()})
+def zone_list(request: HttpRequest) -> HttpResponse:
+    zones = Zone.objects.prefetch_related("crags")
+    return render(request, "adventures/zones.html", {"zones": zones})
 
 
 @login_required
-def area_add(request: HttpRequest) -> HttpResponse:
+def zone_add(request: HttpRequest) -> HttpResponse:
+    return _edit(request, ZoneForm, None, noun="zone", success_url="adventures:zones")
+
+
+@login_required
+def zone_edit(request: HttpRequest, pk: int) -> HttpResponse:
+    zone = get_object_or_404(Zone, pk=pk)
     return _edit(
         request,
-        AreaForm,
-        None,
-        noun="area",
-        success_url="adventures:areas",
-        template="adventures/area_form.html",
+        ZoneForm,
+        zone,
+        noun="zone",
+        success_url="adventures:zones",
+        delete_url=reverse("adventures:delete", args=["zone", pk]),
     )
 
 
 @login_required
-def area_edit(request: HttpRequest, pk: int) -> HttpResponse:
-    area = get_object_or_404(Area, pk=pk)
+def crag_add(request: HttpRequest) -> HttpResponse:
+    zone = request.GET.get("zone")
     return _edit(
         request,
-        AreaForm,
-        area,
-        noun="area",
-        success_url="adventures:areas",
-        delete_url=reverse("adventures:delete", args=["area", pk]),
-        template="adventures/area_form.html",
+        CragForm,
+        None,
+        noun="crag",
+        success_url="adventures:zones",
+        initial={"zone": zone} if zone else None,
+        template="adventures/crag_form.html",
+    )
+
+
+@login_required
+def crag_edit(request: HttpRequest, pk: int) -> HttpResponse:
+    crag = get_object_or_404(Crag, pk=pk)
+    return _edit(
+        request,
+        CragForm,
+        crag,
+        noun="crag",
+        success_url="adventures:zones",
+        delete_url=reverse("adventures:delete", args=["crag", pk]),
+        template="adventures/crag_form.html",
     )
 
 
 @login_required
 @require_POST
 def refresh_route_counts(request: HttpRequest) -> HttpResponse:
-    areas = [area for area in Area.objects.all() if area.openbeta_uuids]
+    crags = [c for c in Crag.objects.select_related("zone") if c.openbeta_uuids]
     failed = []
-    for area in areas:
+    for crag in crags:
         try:
-            area.grade_counts = openbeta.fetch_grade_counts(area.openbeta_uuids)
+            crag.grade_counts = openbeta.fetch_grade_counts(crag.openbeta_uuids)
         except (OSError, ValueError, KeyError) as exc:
-            logger.warning("OpenBeta fetch for %s failed: %s", area, exc)
-            failed.append(area.name)
+            logger.warning("OpenBeta fetch for %s failed: %s", crag, exc)
+            failed.append(str(crag))
             continue
-        area.grade_counts_updated_at = timezone.now()
-        area.save(update_fields=["grade_counts", "grade_counts_updated_at"])
+        crag.grade_counts_updated_at = timezone.now()
+        crag.save(update_fields=["grade_counts", "grade_counts_updated_at"])
     if failed:
         messages.error(request, f"Couldn't reach OpenBeta for: {', '.join(failed)}")
     else:
-        messages.success(request, f"Route counts refreshed for {len(areas)} areas.")
-    return redirect("adventures:areas")
+        messages.success(request, f"Route counts refreshed for {len(crags)} crags.")
+    return redirect("adventures:zones")
 
 
 @login_required
@@ -520,7 +554,8 @@ _DELETABLE = {
     "todo": ToDo,
     "climber": Climber,
     "trip": Trip,
-    "area": Area,
+    "zone": Zone,
+    "crag": Crag,
 }
 
 
@@ -534,7 +569,8 @@ def delete(request: HttpRequest, kind: str, pk: int) -> HttpResponse:
         "todo": lambda: reverse("adventures:climber", args=[obj.climber_id]),
         "climber": lambda: reverse("adventures:climbers"),
         "trip": lambda: reverse("adventures:trips"),
-        "area": lambda: reverse("adventures:areas"),
+        "zone": lambda: reverse("adventures:zones"),
+        "crag": lambda: reverse("adventures:zones"),
     }[kind]()
     obj.delete()
     if isinstance(obj, ToDo):

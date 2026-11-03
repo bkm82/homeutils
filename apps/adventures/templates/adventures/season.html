@@ -44,7 +44,7 @@
     <li>
         <div>
             <a href="{% url 'adventures:log' weekend.saturday|date:'Y-m-d' %}">{{ weekend.saturday|date:"M j" }}</a>
-            · {% if weekend.outcome == "climbed" %}{{ weekend.area.name }}{% else %}Rained out{% endif %}
+            · {% if weekend.outcome == "climbed" %}{% if weekend.saturday_crag %}Sat {{ weekend.saturday_crag }}{% endif %}{% if weekend.saturday_crag and weekend.sunday_crag %} · {% endif %}{% if weekend.sunday_crag %}Sun {{ weekend.sunday_crag }}{% endif %}{% else %}Rained out{% endif %}
             {% if weekend.credits.all %}
             <div class="option-reasons">{% for credit in weekend.credits.all %}{{ credit.climber.name }} {{ credit.value|floatformat:1 }}{% if not forloop.last %} · {% endif %}{% endfor %} (share {{ weekend.credits.all.0.share|floatformat:1 }} each)</div>
             {% endif %}

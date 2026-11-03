@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 from django.utils import timezone
 
-from .models import Area, ForecastCache
+from .models import ForecastCache, Zone
 
 logger = logging.getLogger(__name__)
 
@@ -106,37 +106,37 @@ def parse_daily(daily: dict) -> list[DayForecast]:
     return days
 
 
-def _is_fresh(cache: ForecastCache, area: Area, now) -> bool:
+def _is_fresh(cache: ForecastCache, zone: Zone, now) -> bool:
     return (
         now - cache.fetched_at < CACHE_TTL
-        and cache.latitude == area.latitude
-        and cache.longitude == area.longitude
+        and cache.latitude == zone.latitude
+        and cache.longitude == zone.longitude
     )
 
 
-def get_forecasts(areas: list[Area]) -> dict[int, list[DayForecast]]:
-    """Forecast per area id, refreshing stale entries in one batched request.
+def get_forecasts(zones: list[Zone]) -> dict[int, list[DayForecast]]:
+    """Forecast per zone id, refreshing stale entries in one batched request.
 
     If the API is unreachable, stale cached forecasts are still returned (better
-    than nothing); areas never fetched successfully are simply missing.
+    than nothing); zones never fetched successfully are simply missing.
     """
     now = timezone.now()
-    cached = {c.area_id: c for c in ForecastCache.objects.filter(area__in=areas)}
-    stale = [a for a in areas if a.id not in cached or not _is_fresh(cached[a.id], a, now)]
+    cached = {c.zone_id: c for c in ForecastCache.objects.filter(zone__in=zones)}
+    stale = [z for z in zones if z.id not in cached or not _is_fresh(cached[z.id], z, now)]
     if stale:
         try:
             dailies = fetch_daily([(a.latitude, a.longitude) for a in stale])
         except (OSError, ValueError, KeyError) as exc:
             logger.warning("Open-Meteo fetch failed: %s", exc)
         else:
-            for area, daily in zip(stale, dailies, strict=True):
-                cached[area.id], _ = ForecastCache.objects.update_or_create(
-                    area=area,
+            for zone, daily in zip(stale, dailies, strict=True):
+                cached[zone.id], _ = ForecastCache.objects.update_or_create(
+                    zone=zone,
                     defaults={
-                        "latitude": area.latitude,
-                        "longitude": area.longitude,
+                        "latitude": zone.latitude,
+                        "longitude": zone.longitude,
                         "fetched_at": now,
                         "daily": daily,
                     },
                 )
-    return {area_id: parse_daily(cache.daily) for area_id, cache in cached.items()}
+    return {zone_id: parse_daily(cache.daily) for zone_id, cache in cached.items()}

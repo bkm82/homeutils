@@ -54,27 +54,26 @@ streaks/heatmaps - defaults to `America/Phoenix`; override it in `.env` if deplo
 
 ## Adventures (group climbing planner)
 
-Picks which crag the group should focus on each weekend, balancing everyone's to-do lists
-across the season. Weather comes first: each crag is rated go / marginal / no from the
-16-day [Open-Meteo](https://open-meteo.com/) forecast, and sandstone crags are ruled out for
-48h after rain (rules in `apps/adventures/conditions.py`).
+Picks where the group climbs each weekend, balancing everyone's to-do lists across the season.
 
-- **Climbers** are profiles with an optional link to a login, so friends don't need accounts.
-  Each climber keeps a ranked to-do list. #1 is worth 1, #2 is worth ½, #3 is worth ⅓, and so
-  on, and a crag's worth to someone is the sum over their to-dos there.
-- **Season ledger** (`apps/adventures/ledger.py`): logging a climbed weekend credits each
-  attendee with the crag's worth to them, frozen at that point, and entitles them to an equal
-  share of the weekend's total. The difference adds up into an "owed" balance. Rained-out
-  weekends credit nobody, so whoever was owed stays first in line. Only weekends you attend
-  count.
-- **Planner**: for each weekend, toggle who's in. Crags are ranked by weather, then by
-  Σ (1 + balance) × worth over attendees, so whoever is most owed pulls the pick their way.
-  Logging records sessions and sends; a send takes the to-do off the list, which shifts
-  future focus.
-- **Focus** (from the coach's input): *Volume* ranks by routes in attendees' onsight ranges,
-  based on their Mountain Project tick exports and [OpenBeta](https://openbeta.io) route counts.
-  *Try hard* counts only projects. Use Crags → "Refresh route counts" to load OpenBeta data;
-  OpenBeta is never called while the planner page renders.
+- **Zones and crags**: a zone (Sedona, Red Rocks, ...) is a forecast point plus a set of crags,
+  and is either *local* (day-trippable) or a *trip*. The group climbs exactly one crag per day.
+  Add and edit both on the Zones page; a crag can link to OpenBeta areas for route counts.
+- **Plans**: for each weekend the planner builds a *Local* plan (each day picks the best crag
+  from any local zone) and one plan per trip zone (both days at crags in that zone), then
+  ranks them. Weather comes first: each crag-day is rated go / marginal / no from its zone's
+  16-day [Open-Meteo](https://open-meteo.com/) forecast, and sandstone crags are ruled out for
+  48h after rain (`apps/adventures/conditions.py`). A second day at the same crag counts at
+  half, so plans spread sessions out unless one crag is clearly best.
+- **Climbers** are profiles with an optional link to a login. Each has a ranked to-do list
+  (#1 is worth 1, #2 is worth ½, ...) and hand-entered onsight/redpoint grades. A Mountain
+  Project tick import only *suggests* grades.
+- **Season ledger** (`apps/adventures/ledger.py`): each climbed day credits each attendee
+  with half of what that crag is worth to them, and an equal half-share of the day's total.
+  The difference adds up into an "owed" balance, and the planner weights each attendee by
+  (1 + balance). Rained-out weekends credit nobody, so whoever was owed stays first in line.
+- **Focus** (from the coach's input): *Volume* ranks by routes in attendees' onsight ranges
+  (OpenBeta counts; use Zones → "Refresh route counts"). *Try hard* counts only projects.
 
 ## Adding a new utility app
 

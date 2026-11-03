@@ -9,9 +9,9 @@
 </div>
 {% include "adventures/partials/subnav.html" %}
 
-{% if not has_areas %}
+{% if not has_crags %}
 <div class="empty-state">
-    <div><a class="btn btn-primary" href="{% url 'adventures:area_add' %}">+ Add a crag</a></div>
+    <div><a class="btn btn-primary" href="{% url 'adventures:zones' %}">+ Add zones and crags</a></div>
 </div>
 {% else %}
     {% if not has_climbers %}
@@ -29,7 +29,7 @@
             <li>
                 <div>
                     <a href="{% url 'adventures:trip_edit' trip.pk %}">{{ trip.title }}</a>
-                    <div class="option-reasons">{{ trip.area.name }} · {{ trip.start_date|date:"M j" }} · {{ trip.start_date|timeuntil }} away</div>
+                    <div class="option-reasons">{{ trip.zone.name }} · {{ trip.start_date|date:"M j" }} · {{ trip.start_date|timeuntil }} away</div>
                 </div>
             </li>
             {% endfor %}

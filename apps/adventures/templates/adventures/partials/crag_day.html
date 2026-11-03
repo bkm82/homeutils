@@ -1,0 +1,32 @@
+<li class="option verdict-{{ pick.verdict }}">
+    <div class="option-main">
+        <span class="verdict-dot" aria-label="{{ pick.verdict }}"></span>
+        <div>
+            <div class="option-title">
+                <span class="day-label">{{ pick.forecast.date|date:"D" }}</span>
+                {{ pick.crag.name }}{% if show_zone %} <span class="zone-label">{{ pick.crag.zone.name }}</span>{% endif %}
+            </div>
+            {% if pick.rating.reasons %}<div class="option-reasons">{{ pick.rating.reasons|join:" · " }}</div>{% endif %}
+            {% if pick.volume_count is not None %}<div class="volume-count">{{ pick.volume_count }} route{{ pick.volume_count|pluralize }} in the group's volume ranges</div>{% endif %}
+            {% if pick.served %}
+            <ul class="goal-tags">
+                {% for served in pick.served %}
+                <li class="goal-tag{% if served.need > 1 %} priority{% endif %}" title="Need weight {{ served.need|floatformat:2 }} × crag value {{ served.value|floatformat:2 }}">
+                    {{ served.climber.name }}
+                    <span>· {% for todo in served.todos|slice:":2" %}#{{ todo.rank }} {{ todo.name }}{% if todo.is_project %} (project){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if served.todos|length > 2 %} +{{ served.todos|length|add:"-2" }}{% endif %}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="option-reasons">Nobody going has a to-do here.</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="day-chips">
+        <div class="day-chip verdict-{{ pick.verdict }}">
+            <span class="day-name">{{ pick.forecast.date|date:"D j" }}</span>
+            <span class="day-temp">{{ pick.forecast.high|floatformat:0 }}° / {{ pick.forecast.low|floatformat:0 }}°</span>
+            <span class="day-sky">{{ pick.forecast.summary }}{% if pick.forecast.precip_chance %} · {{ pick.forecast.precip_chance }}%{% endif %}</span>
+        </div>
+    </div>
+</li>
