@@ -330,14 +330,30 @@ def climber_detail(request: HttpRequest, pk: int) -> HttpResponse:
                 (t for t in todos if t.is_sent), key=lambda t: t.sent_on, reverse=True
             ),
             "balance": selectors.season_balances().get(climber.pk, 0.0),
-            "level": grades.climbing_level(
-                climber.ticks.filter(grade__isnull=False), timezone.localdate()
-            ),
+            "suggested": _suggested_level(climber),
             "window_days": grades.LEVEL_WINDOW_DAYS,
             "tick_form": tick_form,
             "recent_ticks": climber.ticks.all()[:10],
         },
     )
+
+
+def _suggested_level(climber: Climber) -> grades.ClimbingLevel:
+    return grades.climbing_level(climber.ticks.filter(grade__isnull=False), timezone.localdate())
+
+
+@login_required
+@require_POST
+def climber_use_suggested(request: HttpRequest, pk: int) -> HttpResponse:
+    """Copy the tick-based suggestions into the climber's grades (only where there is one)."""
+    climber = get_object_or_404(Climber, pk=pk)
+    suggested = _suggested_level(climber)
+    if suggested.onsight_label:
+        climber.onsight_grade = suggested.onsight_label
+    if suggested.redpoint_label:
+        climber.redpoint_grade = suggested.redpoint_label
+    climber.save(update_fields=["onsight_grade", "redpoint_grade"])
+    return redirect("adventures:climber", pk=pk)
 
 
 @login_required

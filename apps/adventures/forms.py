@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth import get_user_model
 
-from . import openbeta
+from . import grades, openbeta
 from .models import Area, Climber, ToDo, Trip
 
 
@@ -59,12 +59,32 @@ class ClimberForm(forms.ModelForm):
 
     class Meta:
         model = Climber
-        fields = ["name", "user", "is_active"]
+        fields = ["name", "user", "onsight_grade", "redpoint_grade", "is_active"]
+        widgets = {
+            "onsight_grade": forms.TextInput(attrs={"placeholder": "e.g. 5.10c"}),
+            "redpoint_grade": forms.TextInput(attrs={"placeholder": "e.g. 5.11d"}),
+        }
+        help_texts = {
+            "onsight_grade": "Hardest grade they reliably onsight. Volume weekends aim at routes "
+            "up to three letter grades below it.",
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["user"].queryset = get_user_model().objects.filter(is_active=True)
         self.fields["is_active"].label = "In the group this season"
+
+    def _clean_grade(self, field: str) -> str:
+        value = self.cleaned_data[field].strip()
+        if value and grades.parse_yds(value) is None:
+            raise forms.ValidationError("Use a YDS grade like 5.10c or 5.11+.")
+        return value
+
+    def clean_onsight_grade(self) -> str:
+        return self._clean_grade("onsight_grade")
+
+    def clean_redpoint_grade(self) -> str:
+        return self._clean_grade("redpoint_grade")
 
 
 class ToDoForm(forms.ModelForm):

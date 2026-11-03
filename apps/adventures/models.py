@@ -51,6 +51,9 @@ class Climber(models.Model):
         help_text="Optional: the login this climber uses.",
     )
     is_active = models.BooleanField(default=True)
+    # Entered by hand (a tick import only suggests values); drive volume weekends.
+    onsight_grade = models.CharField(max_length=12, blank=True)
+    redpoint_grade = models.CharField(max_length=12, blank=True)
 
     class Meta:
         ordering = ["name"]
