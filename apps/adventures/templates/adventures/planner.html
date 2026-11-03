@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Adventures · homeutils{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <h1>Adventures</h1>
+    <a class="btn btn-primary" href="{% url 'adventures:trip_add' %}">+ Trip</a>
+</div>
+{% include "adventures/partials/subnav.html" %}
+
+{% if not has_areas %}
+<div class="empty-state">
+    <div><a class="btn btn-primary" href="{% url 'adventures:area_add' %}">+ Add an area</a></div>
+</div>
+{% else %}
+    {% for weekend in weekends %}
+        {% include "adventures/partials/weekend.html" %}
+    {% endfor %}
+
+    {% if later_trips %}
+    <section class="weekend">
+        <div class="weekend-head"><h2>Later</h2></div>
+        <ul class="item-list">
+            {% for trip in later_trips %}
+            <li>
+                <div>
+                    <a href="{% url 'adventures:trip_edit' trip.pk %}">{{ trip.title }}</a>
+                    <div class="option-reasons">{{ trip.get_activity_display }} · {{ trip.area.name }} · {{ trip.start_date|date:"M j" }} · {{ trip.start_date|timeuntil }} away</div>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    {% if updated_at %}
+    <p class="footnote">Forecast from <a href="https://open-meteo.com/">Open-Meteo</a>, updated {{ updated_at|timesince }} ago.</p>
+    {% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,9 @@
+<div class="day-chips">
+    {% for day in days %}
+    <div class="day-chip verdict-{{ day.rating.verdict }}" title="{{ day.rating.reasons|join:', '|default:'Looks good' }}">
+        <span class="day-name">{{ day.forecast.date|date:"D j" }}</span>
+        <span class="day-temp">{{ day.forecast.high|floatformat:0 }}° / {{ day.forecast.low|floatformat:0 }}°</span>
+        <span class="day-sky">{{ day.forecast.summary }}{% if day.forecast.precip_chance %} · {{ day.forecast.precip_chance }}%{% endif %}</span>
+    </div>
+    {% endfor %}
+</div>
