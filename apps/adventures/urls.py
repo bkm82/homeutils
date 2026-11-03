@@ -15,6 +15,11 @@ urlpatterns = [
     path("adventures/climbers/new/", views.climber_add, name="climber_add"),
     path("adventures/climbers/<int:pk>/", views.climber_detail, name="climber"),
     path("adventures/climbers/<int:pk>/edit/", views.climber_edit, name="climber_edit"),
+    path(
+        "adventures/climbers/<int:pk>/use-suggested/",
+        views.climber_use_suggested,
+        name="climber_use_suggested",
+    ),
     path("adventures/climbers/<int:climber_pk>/todos/new/", views.todo_add, name="todo_add"),
     path("adventures/todos/<int:pk>/edit/", views.todo_edit, name="todo_edit"),
     path("adventures/todos/<int:pk>/send/", views.todo_send, name="todo_send"),

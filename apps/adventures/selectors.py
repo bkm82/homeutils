@@ -6,7 +6,7 @@ from django.db.models import Min
 
 from . import conditions, grades, ledger, weather
 from .grades import ClimbingLevel
-from .models import Area, Climber, Credit, Focus, ForecastCache, Tick, ToDo, Trip, Weekend
+from .models import Area, Climber, Credit, Focus, ForecastCache, ToDo, Trip, Weekend
 from .weather import DayForecast
 
 VERDICT_RANK = {"go": 2, "marginal": 1, "no": 0}
@@ -200,11 +200,8 @@ def build_weekend(
     )
 
 
-def climber_levels(climbers: list[Climber], today: date) -> dict[int, ClimbingLevel]:
-    ticks = defaultdict(list)
-    for tick in Tick.objects.filter(climber__in=climbers, grade__isnull=False):
-        ticks[tick.climber_id].append(tick)
-    return {c.pk: grades.climbing_level(ticks[c.pk], today) for c in climbers}
+def climber_levels(climbers: list[Climber]) -> dict[int, ClimbingLevel]:
+    return {c.pk: grades.from_grades(c.onsight_grade, c.redpoint_grade) for c in climbers}
 
 
 def season_balances() -> dict[int, float]:
@@ -217,7 +214,7 @@ def build_weekends(saturdays: list[date], today: date) -> list[WeekendOutlook]:
     climbers = list(Climber.objects.filter(is_active=True))
     todos = list(ToDo.objects.filter(climber__in=climbers, sent_on__isnull=True))
     balances = season_balances()
-    levels = climber_levels(climbers, today)
+    levels = climber_levels(climbers)
     trips = list(Trip.objects.filter(end_date__gte=today).select_related("area"))
     weekends = {
         w.saturday: w

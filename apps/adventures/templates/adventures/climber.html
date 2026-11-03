@@ -11,9 +11,21 @@
 
 <dl class="config-summary level-summary">
     <div><dt>Season</dt><dd>{% if balance > 0.05 %}owed {{ balance|floatformat:1 }}{% elif balance < -0.05 %}ahead {{ balance|floatformat:1|cut:"-" }}{% else %}even{% endif %}</dd></div>
-    <div><dt>Onsight</dt><dd>{{ level.onsight_label|default:"—" }}</dd></div>
-    <div><dt>Redpoint</dt><dd>{{ level.redpoint_label|default:"—" }}</dd></div>
+    <div><dt>Onsight</dt><dd>{{ climber.onsight_grade|default:"—" }}</dd></div>
+    <div><dt>Redpoint</dt><dd>{{ climber.redpoint_grade|default:"—" }}</dd></div>
 </dl>
+{% if suggested.onsight_label or suggested.redpoint_label %}
+{% if suggested.onsight_label != climber.onsight_grade or suggested.redpoint_label != climber.redpoint_grade %}
+<form class="suggestion" method="post" action="{% url 'adventures:climber_use_suggested' climber.pk %}">
+    {% csrf_token %}
+    <span>From their ticks: {{ suggested.onsight_label|default:"—" }} onsight · {{ suggested.redpoint_label|default:"—" }} redpoint</span>
+    <button class="btn" type="submit">Use suggestions</button>
+    <a class="btn-ghost" href="{% url 'adventures:climber_edit' climber.pk %}">Edit by hand</a>
+</form>
+{% endif %}
+{% elif not climber.onsight_grade %}
+<p class="footnote"><a href="{% url 'adventures:climber_edit' climber.pk %}">Set their grades</a> or import ticks below for a suggestion - volume weekends need an onsight grade.</p>
+{% endif %}
 
 <div class="page-head" style="margin-top: 1.5rem;">
     <h2>To-do list</h2>
@@ -76,7 +88,7 @@
     <label class="field-label" for="{{ tick_form.file.id_for_label }}">{{ tick_form.file.label }}</label>
     {{ tick_form.file }}
     {{ tick_form.file.errors }}
-    <small class="field-help">On Mountain Project: profile → Ticks → Export CSV. Importing replaces the previous import. Levels are the average of the 3 hardest clean leads in the last {{ window_days }} days.</small>
+    <small class="field-help">On Mountain Project: profile → Ticks → Export CSV. Importing replaces the previous import and suggests grades from the average of the 3 hardest clean leads in the last {{ window_days }} days - it never changes their grades on its own.</small>
     <button class="btn" type="submit">Import ticks</button>
 </form>
 {% if recent_ticks %}

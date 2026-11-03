@@ -78,6 +78,11 @@ class ClimbingLevel:
         return (self.onsight - 0.75, self.onsight)
 
 
+def from_grades(onsight: str, redpoint: str) -> ClimbingLevel:
+    """A level from hand-entered grade labels (blank or unparseable -> unknown)."""
+    return ClimbingLevel(onsight=parse_yds(onsight), redpoint=parse_yds(redpoint))
+
+
 def _top_average(grades: list[float]) -> float | None:
     top = sorted(grades, reverse=True)[:LEVEL_TOP_N]
     return sum(top) / len(top) if top else None

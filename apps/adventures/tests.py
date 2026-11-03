@@ -463,6 +463,49 @@ class ViewTests(TestCase):
             sorted(self.you.ticks.values_list("route", flat=True)), ["Boulder", "Crack", "Slab"]
         )
 
+    def test_tick_import_suggests_but_does_not_set_grades(self):
+        self.you.onsight_grade = "5.9"
+        self.you.save()
+        upload = SimpleUploadedFile("ticks.csv", TICK_CSV.encode(), content_type="text/csv")
+        self.client.post(reverse("adventures:climber", args=[self.you.pk]), {"file": upload})
+        self.you.refresh_from_db()
+        self.assertEqual(self.you.onsight_grade, "5.9")
+        # TICK_CSV's dates are fixed, so pin "today" inside the level window.
+        with patch("apps.adventures.views.timezone.localdate", return_value=date(2026, 11, 1)):
+            response = self.client.get(reverse("adventures:climber", args=[self.you.pk]))
+            self.assertContains(response, "From their ticks: 5.10c onsight")
+            self.client.post(reverse("adventures:climber_use_suggested", args=[self.you.pk]))
+        self.you.refresh_from_db()
+        # Redpoint suggestion averages the two clean sends: 5.11b/c and 5.10c.
+        self.assertEqual((self.you.onsight_grade, self.you.redpoint_grade), ("5.10c", "5.11a"))
+
+    def test_climber_grades_are_validated(self):
+        response = self.client.post(
+            reverse("adventures:climber_edit", args=[self.you.pk]),
+            {"name": "You", "onsight_grade": "V5", "is_active": "on"},
+        )
+        self.assertContains(response, "Use a YDS grade")
+        self.client.post(
+            reverse("adventures:climber_edit", args=[self.you.pk]),
+            {"name": "You", "onsight_grade": "5.10+", "redpoint_grade": "", "is_active": "on"},
+        )
+        self.you.refresh_from_db()
+        self.assertEqual(self.you.onsight_grade, "5.10+")
+
+    def test_planner_levels_come_from_entered_grades(self):
+        self.me.onsight_grade = "5.10c"
+        self.me.save()
+        Tick.objects.create(
+            climber=self.you,
+            date=timezone.localdate(),
+            route="R",
+            grade=12.0,
+            lead_style="Onsight",
+        )
+        levels = selectors.climber_levels([self.me, self.you])
+        self.assertEqual(levels[self.me.pk].onsight_label, "5.10c")
+        self.assertIsNone(levels[self.you.pk].onsight)
+
     def test_tick_import_rejects_non_export(self):
         upload = SimpleUploadedFile("x.csv", b"foo,bar\n1,2\n", content_type="text/csv")
         response = self.client.post(
